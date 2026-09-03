@@ -1,0 +1,48 @@
+name: RFC Semantic Validator
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'rfc/**'
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+    paths:
+      - 'rfc/**'
+
+jobs:
+  validate-rfc-number:
+    name: validate-rfc-number
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          persist-credentials: false
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+
+      - name: Install Dependencies
+        run: dart pub get
+
+      - name: Validate (PR Mode)
+        if: github.event_name == 'pull_request'
+        run: |
+          dart run bin/validate_rfc_number.dart \
+            --check-main \
+            --github-actions
+
+      - name: Validate (Merge Queue & Main Mode)
+        if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        run: |
+          dart run bin/validate_rfc_number.dart \
+            --no-drafts \
+            --github-actions
