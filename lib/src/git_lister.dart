@@ -43,7 +43,6 @@ Future<Set<String>> defaultGitList({
     if (result.exitCode == 0) {
       return parseLsTreeOutput(result.stdout);
     }
-    _logGitError(result);
 
     final cleanBranch = baseBranch.replaceFirst(
       RegExp(r'^(?:remotes\/)?(?:origin|upstream)\/'),
@@ -61,6 +60,8 @@ Future<Set<String>> defaultGitList({
         return parseLsTreeOutput(locResult.stdout);
       }
       _logGitError(locResult);
+    } else {
+      _logGitError(result);
     }
   } catch (e) {
     stderr.writeln('git ls-tree exception: $e');
