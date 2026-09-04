@@ -1,0 +1,4 @@
+default: true # Enable all standard markdownlint rules by default
+MD013: false # Do not enforce line lengths (diff churning, table lengths, diagrams etc)
+MD033: false # Allow inline HTML (badges, centered logos/images, details/summary folds)
+MD041: true # Enforce top-level heading (# RFC AAA.NNNN: Title) after frontmatter
