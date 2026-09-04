@@ -166,7 +166,7 @@ class RfcLinter {
     }
 
     final fm = rfc.frontmatter;
-    final rfcId = fm?.rfc ?? rfc.frontmatterRfc;
+    final rfcId = fm?.rfc;
     final expectedId = rfc.rfcId;
 
     if (rfcId != null && rfcId != expectedId) {
@@ -220,7 +220,7 @@ class RfcLinter {
         );
       }
 
-      final fmTitle = fm?.title.trim() ?? rfc.frontmatterTitle?.trim();
+      final fmTitle = fm?.title.trim();
       if (fmTitle != null &&
           fmTitle.isNotEmpty &&
           rfc.firstHeadingTitle != fmTitle) {

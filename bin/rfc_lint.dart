@@ -46,13 +46,14 @@ void main(List<String> arguments) async {
   } catch (e) {
     stderr.writeln('Error parsing arguments: $e\n');
     stderr.writeln(parser.usage);
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   if (results.flag('help')) {
     stdout.writeln('RFC Linter - Flutter RFC Repository Tooling\n');
     stdout.writeln(parser.usage);
-    exit(0);
+    return;
   }
 
   final enforceDrafts = results.flag('enforce-drafts');
@@ -72,7 +73,8 @@ void main(List<String> arguments) async {
     taxonomy = await Taxonomy.load(fs);
   } catch (e) {
     stderr.writeln('Failed to load taxonomy: $e');
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   final filesOnMain = await defaultGitList(baseBranch: 'origin/main');
@@ -105,9 +107,9 @@ void main(List<String> arguments) async {
         stderr.writeln('[ERROR] $issue');
       }
     }
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   stdout.writeln('All RFC documents passed lint checks cleanly.');
-  exit(0);
 }
