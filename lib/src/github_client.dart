@@ -29,6 +29,13 @@ class CliGitHubClient implements GitHubClient {
         'users/$username',
         '--silent',
       ]);
+      if (result.exitCode != 0) {
+        stdout.writeln('exit code: ${result.exitCode}');
+        stdout.writeln('gh api stdout:');
+        stdout.writeln(result.stdout);
+        stderr.writeln('gh api stderr:');
+        stderr.writeln(result.stderr);
+      }
       return result.exitCode == 0;
     } catch (_) {
       return false;

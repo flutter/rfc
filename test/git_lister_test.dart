@@ -17,7 +17,7 @@ void main() {
 
       final files = await defaultGitList(
         baseBranch: 'origin/main',
-        runProcess: runner.run,
+        processRunner: runner.run,
       );
 
       expect(
@@ -39,7 +39,7 @@ void main() {
 
       final files = await defaultGitList(
         baseBranch: 'origin/main',
-        runProcess: runner.run,
+        processRunner: runner.run,
       );
 
       expect(files, isEmpty);
@@ -52,7 +52,7 @@ void main() {
 
       final files = await defaultGitList(
         baseBranch: 'origin/main',
-        runProcess: runner.run,
+        processRunner: runner.run,
       );
 
       expect(files, isEmpty);

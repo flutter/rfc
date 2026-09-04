@@ -14,10 +14,10 @@ typedef GitListFunction =
 Future<Set<String>> defaultGitList({
   String baseBranch = 'origin/main',
   String rfcDir = 'rfc',
-  ProcessRunner runProcess = Process.run,
+  ProcessRunner processRunner = Process.run,
 }) async {
   try {
-    final result = await runProcess('git', [
+    final result = await processRunner('git', [
       'ls-tree',
       '-r',
       '--name-only',
@@ -26,6 +26,11 @@ Future<Set<String>> defaultGitList({
       '$rfcDir/',
     ]);
     if (result.exitCode != 0) {
+      stdout.writeln('exit code: ${result.exitCode}');
+      stdout.writeln('git ls-tree stdout:');
+      stdout.writeln(result.stdout);
+      stderr.writeln('git ls-tree stderr:');
+      stderr.writeln(result.stderr);
       return const <String>{};
     }
     final stdoutStr = result.stdout as String;
