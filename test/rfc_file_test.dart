@@ -56,22 +56,28 @@ Some markdown text.
       expect(rfc.frontmatter!.updated, equals(DateTime.utc(2026, 8, 27)));
 
       // Typed authors
-      expect(rfc.authors, isNotNull);
-      expect(rfc.authors!.length, equals(1));
-      expect(rfc.authors!.first, isA<GitHubAuthor>());
-      expect((rfc.authors!.first as GitHubAuthor).username, equals('octocat'));
-
-      // Compatibility accessors
-      expect(rfc.frontmatterType, equals('rfc'));
-      expect(rfc.frontmatterRfc, equals('110.0000'));
-      expect(rfc.frontmatterTitle, equals('Extract Value Notifier'));
+      expect(rfc.frontmatter!.authors, isNotNull);
+      expect(rfc.frontmatter!.authors.length, equals(1));
+      expect(rfc.frontmatter!.authors.first, isA<GitHubAuthor>());
       expect(
-        rfc.frontmatterDescription,
+        (rfc.frontmatter!.authors.first as GitHubAuthor).username,
+        equals('octocat'),
+      );
+
+      // Strongly-typed frontmatter fields
+      expect(rfc.frontmatter!.type, equals('rfc'));
+      expect(rfc.frontmatter!.rfc, equals('110.0000'));
+      expect(rfc.frontmatter!.title, equals('Extract Value Notifier'));
+      expect(
+        rfc.frontmatter!.description,
         equals('Extract ValueNotifier into a foundation package.'),
       );
-      expect(rfc.frontmatterStatus, equals('draft'));
-      expect(rfc.frontmatterTags, equals(['110-foundation']));
-      expect(rfc.frontmatterAuthors, equals(['https://github.com/octocat']));
+      expect(rfc.frontmatter!.status, equals(RfcStatus.draft));
+      expect(rfc.frontmatter!.tags, equals(['110-foundation']));
+      expect(
+        rfc.frontmatter!.authors.map((a) => a.raw).toList(),
+        equals(['https://github.com/octocat']),
+      );
 
       expect(rfc.firstHeadingId, equals('110.0000'));
       expect(rfc.firstHeadingTitle, equals('Extract Value Notifier'));
@@ -101,14 +107,14 @@ authors:
       );
 
       expect(rfc.hasValidFrontmatter, isTrue);
-      expect(rfc.authors?.length, equals(2));
-      expect(rfc.authors?[0], isA<EmailAuthor>());
-      final a1 = rfc.authors?[0] as EmailAuthor;
+      expect(rfc.frontmatter?.authors.length, equals(2));
+      expect(rfc.frontmatter?.authors[0], isA<EmailAuthor>());
+      final a1 = rfc.frontmatter?.authors[0] as EmailAuthor;
       expect(a1.name, equals('John McDole'));
       expect(a1.email, equals('codefu@google.com'));
 
-      expect(rfc.authors?[1], isA<EmailAuthor>());
-      final a2 = rfc.authors?[1] as EmailAuthor;
+      expect(rfc.frontmatter?.authors[1], isA<EmailAuthor>());
+      final a2 = rfc.frontmatter?.authors[1] as EmailAuthor;
       expect(a2.name, equals('Jane Doe'));
       expect(a2.email, equals('jane@flutter.dev'));
     });
@@ -132,7 +138,6 @@ title: Incomplete Frontmatter
         expect(rfc.hasFrontmatter, isTrue);
         expect(rfc.hasValidFrontmatter, isFalse);
         expect(rfc.frontmatter, isNull);
-        expect(rfc.authors, isNull);
         expect(rfc.frontmatterErrors, isNotEmpty);
         expect(
           rfc.frontmatterErrors.any((e) => e.contains('description')),
@@ -140,11 +145,6 @@ title: Incomplete Frontmatter
         );
         expect(rfc.frontmatterErrors.any((e) => e.contains('status')), isTrue);
         expect(rfc.frontmatterErrors.any((e) => e.contains('created')), isTrue);
-
-        // Loose accessors still extract raw YAML values if needed
-        expect(rfc.frontmatterTitle, equals('Incomplete Frontmatter'));
-        expect(rfc.frontmatterRfc, equals('110.0000'));
-        expect(rfc.frontmatterDescription, isNull);
 
         // Rich feedback provides complete view of errors and expected format
         expect(rfc.frontmatterFeedback, isNotNull);
@@ -331,12 +331,12 @@ custom_flags: [alpha, experimental]
       expect(rfc3.hasValidFilename, isFalse);
     });
 
-    test('parses CRLF line endings and transforms properly', () {
+    test('parses CRLF input and normalizes output to LF (\\n)', () {
       const crlfSample =
-          "---\r\ntype: rfc\r\nrfc: '110.0000'\r\ntitle: CRLF Test\r\nstatus: draft\r\n---\r\n\r\n# RFC 110.0000: CRLF Test\r\n";
+          "---\r\ntype: rfc\r\nrfc: '110.0000'\r\ntitle: CRLF Test\r\ndescription: Test description\r\nstatus: draft\r\ncreated: 2026-08-27T00:00:00Z\r\nupdated: 2026-08-27T00:00:00Z\r\ntags: [110-foundation]\r\nauthors: [https://github.com/octocat]\r\n---\r\n\r\n# RFC 110.0000: CRLF Test\r\n";
       final rfc = RfcFile.parse(crlfSample, path: 'rfc/110.0000-crlf-test.md');
       expect(rfc.hasFrontmatter, isTrue);
-      expect(rfc.frontmatterTitle, equals('CRLF Test'));
+      expect(rfc.frontmatter?.title, equals('CRLF Test'));
       expect(rfc.firstHeadingTitle, equals('CRLF Test'));
 
       final transformed = rfc.transformedContent(
@@ -346,21 +346,120 @@ custom_flags: [alpha, experimental]
       );
       expect(transformed, contains("rfc: '110.0005'"));
       expect(transformed, contains('# RFC 110.0005: CRLF Test'));
+      expect(transformed, isNot(contains('\r\n')));
     });
 
     test('handles trailing whitespace on frontmatter delimiter line', () {
       const trailingSpaceSample =
-          "---\ntype: rfc\nrfc: '110.0000'\ntitle: Space Test\nstatus: draft\n---   \n\n# RFC 110.0000: Space Test\n";
+          "---\ntype: rfc\nrfc: '110.0000'\ntitle: Space Test\ndescription: Test description\nstatus: draft\ncreated: 2026-08-27T00:00:00Z\nupdated: 2026-08-27T00:00:00Z\ntags: [110-foundation]\nauthors: [https://github.com/octocat]\n---   \n\n# RFC 110.0000: Space Test\n";
       final rfc = RfcFile.parse(
         trailingSpaceSample,
         path: 'rfc/110.0000-space-test.md',
       );
       expect(rfc.hasFrontmatter, isTrue);
-      expect(rfc.frontmatterTitle, equals('Space Test'));
+      expect(rfc.frontmatter?.title, equals('Space Test'));
       expect(rfc.frontmatterError, isNull);
     });
 
-    test('ignores code blocks that precede the first level-1 heading', () {
+    group('frontmatter error line numbers', () {
+      test('includes Line 1 for missing opening frontmatter delimiter', () {
+        final rfc = RfcFile.parse(
+          '# RFC 110.0000: No Frontmatter\n\nBody here.\n',
+          path: 'rfc/110.0000-no-fm.md',
+        );
+        expect(rfc.hasFrontmatter, isFalse);
+        expect(rfc.frontmatterError, startsWith('Line 1: '));
+        expect(
+          rfc.frontmatterError,
+          contains(
+            'File does not start with YAML frontmatter delimiter `---`.',
+          ),
+        );
+      });
+
+      test('includes Line 1 for unclosed frontmatter delimiter', () {
+        final rfc = RfcFile.parse(
+          '---\ntype: rfc\ntitle: Unclosed\n',
+          path: 'rfc/110.0000-unclosed.md',
+        );
+        expect(rfc.hasFrontmatter, isFalse);
+        expect(rfc.frontmatterError, startsWith('Line 1: '));
+        expect(
+          rfc.frontmatterError,
+          contains('Unclosed YAML frontmatter delimiter'),
+        );
+      });
+
+      test('includes Line 2 for non-mapping frontmatter', () {
+        final rfc = RfcFile.parse(
+          '---\njust a scalar string\n---\n\n# RFC 110.0000: Scalar\n',
+          path: 'rfc/110.0000-scalar.md',
+        );
+        expect(rfc.hasFrontmatter, isTrue);
+        expect(rfc.frontmatterError, startsWith('Line 2: '));
+        expect(
+          rfc.frontmatterError,
+          contains('YAML frontmatter must be a key-value mapping.'),
+        );
+      });
+
+      test('includes exact line number for YAML syntax error', () {
+        // Line 1: ---
+        // Line 2: type: rfc
+        // Line 3: title: [unclosed list
+        // Line 4: ---
+        final rfc = RfcFile.parse(
+          '---\ntype: rfc\ntitle: [unclosed list\n---\n\n# RFC 110.0000: Bad YAML\n',
+          path: 'rfc/110.0000-bad-yaml.md',
+        );
+        expect(rfc.hasFrontmatter, isTrue);
+        expect(rfc.frontmatterError, startsWith('Line 3: '));
+        expect(
+          rfc.frontmatterError,
+          contains('Failed to parse YAML frontmatter:'),
+        );
+      });
+
+      test('includes exact line numbers for field schema errors', () {
+        // Line 1: ---
+        // Line 2: type: rfc
+        // Line 3: rfc: '110.0000'
+        // Line 4: title: Schema Error Test
+        // Line 5: description: Test
+        // Line 6: status: invalid_status
+        // Line 7: created: 2026-08-27T00:00:00Z
+        // Line 8: updated: 2026-08-27T00:00:00Z
+        // Line 9: tags: [110-foundation]
+        // Line 10: authors: [https://github.com/octocat]
+        // Line 11: ---
+        const sampleWithBadStatus = '''---
+type: rfc
+rfc: '110.0000'
+title: Schema Error Test
+description: Test
+status: invalid_status
+created: 2026-08-27T00:00:00Z
+updated: 2026-08-27T00:00:00Z
+tags: [110-foundation]
+authors: [https://github.com/octocat]
+---
+
+# RFC 110.0000: Schema Error Test
+''';
+        final rfc = RfcFile.parse(
+          sampleWithBadStatus,
+          path: 'rfc/110.0000-bad-status.md',
+        );
+        expect(rfc.hasValidFrontmatter, isFalse);
+        expect(rfc.frontmatterErrors, isNotEmpty);
+        final statusError = rfc.frontmatterErrors.firstWhere(
+          (e) => e.contains('"status"'),
+        );
+        expect(statusError, startsWith('Line 6: '));
+      });
+    });
+
+    test('rejects body that does not begin with a level-1 heading', () {
       const precedingCodeBlockSample = '''---
 type: rfc
 rfc: '110.0000'
@@ -388,21 +487,73 @@ Content here.
         path: 'rfc/110.0000-real-title.md',
       );
 
-      // Parser must recognize the actual heading, not the code block
-      expect(rfc.firstHeadingId, equals('110.0000'));
-      expect(rfc.firstHeadingTitle, equals('Real Title'));
-
-      // Transformer must replace the real heading and leave the code block intact
-      final transformed = rfc.transformedContent(
-        newCategory: '110',
-        newIndex: '0002',
-      );
+      expect(rfc.firstHeading, isNull);
+      expect(rfc.firstHeadingId, isNull);
+      expect(rfc.hasValidHeading, isFalse);
+      expect(rfc.headingError, isNotNull);
       expect(
-        transformed,
-        contains('# RFC 999.9999: Code Block Heading Example'),
+        rfc.headingError,
+        contains(
+          'Markdown body must begin with a level-1 heading (`# RFC 110.0000: Real Title`).',
+        ),
       );
-      expect(transformed, contains('# RFC 110.0002: Real Title'));
     });
+
+    test('rejects body that begins with a level-2 heading', () {
+      const level2Sample = '''---
+type: rfc
+rfc: '110.0000'
+title: Level 2 Heading
+description: Test
+status: draft
+created: 2026-08-27T00:00:00Z
+updated: 2026-08-27T00:00:00Z
+tags: [110-foundation]
+authors: [https://github.com/octocat]
+---
+
+## RFC 110.0000: Level 2 Heading
+''';
+
+      final rfc = RfcFile.parse(level2Sample, path: 'rfc/110.0000-level2.md');
+
+      expect(rfc.firstHeading, isNull);
+      expect(rfc.firstHeadingId, isNull);
+      expect(rfc.hasValidHeading, isFalse);
+      expect(rfc.headingError, isNotNull);
+      expect(
+        rfc.headingError,
+        contains('First heading must be a level-1 heading'),
+      );
+    });
+
+    test(
+      'heading error message derives title from slug when frontmatter has no title',
+      () {
+        const noTitleSample = '''---
+type: rfc
+rfc: '110.0000'
+status: draft
+---
+
+# Wrong Heading
+''';
+
+        final rfc = RfcFile.parse(
+          noTitleSample,
+          path: 'rfc/110.0000-derived-slug-title.md',
+        );
+
+        expect(rfc.hasValidHeading, isFalse);
+        expect(rfc.headingError, isNotNull);
+        expect(
+          rfc.headingError,
+          contains(
+            'Heading must match format "# RFC 110.0000: Derived Slug Title".',
+          ),
+        );
+      },
+    );
 
     test('exposes supersedes and supersededBy accessors', () {
       const supersedesSample = '''---
@@ -428,8 +579,6 @@ superseded_by: '110.0003'
       );
       expect(rfc.index, equals(2));
       expect(rfc.indexString, equals('0002'));
-      expect(rfc.frontmatterSupersedes, equals('110.0001'));
-      expect(rfc.frontmatterSupersededBy, equals('110.0003'));
       expect(rfc.frontmatter?.supersedes, equals('110.0001'));
       expect(rfc.frontmatter?.supersededBy, equals('110.0003'));
     });
