@@ -249,56 +249,76 @@ class RfcAssigner {
         'Specify --target-file explicitly.',
       );
     } else {
-      // No .0000 drafts found: check for collision against main
-      // (Edge Case 1: re-allocation)
-      final mainFiles = await getMainFiles();
-      final mainByCategoryIndex = <String, Set<String>>{};
-      for (final mainName in mainFiles.map(p.basename)) {
-        final match = RfcFile.filenamePattern.firstMatch(mainName);
-        if (match != null) {
-          final cat = match.group(1)!;
-          final idx = int.parse(match.group(2)!);
-          final key = '$cat.${idx.toNNNN()}';
-          (mainByCategoryIndex[key] ??= {}).add(mainName);
+      // Collision recovery: When no .0000 draft is found, reallocate an already-assigned
+      // RFC that collides with main (e.g. another PR merged with the same number while
+      // this PR was in review). The validator prevents the collision from landing in main;
+      // this auto-discovers the colliding file so [assign] can reallocate it.
+      final targetRfc = await _reallocate(cachedEntries, getMainFiles);
+      return (targetRfc, cachedEntries);
+    }
+  }
+
+  /// Discovers an assigned RFC in the working tree that collides with main
+  /// for reallocation.
+  ///
+  /// This serves as an automated collision recovery mechanism:
+  /// 1. A PR is assigned a number (e.g. `110.0042`) and is no longer `.0000`.
+  /// 2. Another PR merges into `main` with that same number (`110.0042`) first.
+  /// 3. `validate_rfc_number` detects the collision and blocks the PR from merging.
+  /// 4. To resolve the collision, the maintainer re-triggers the assigner (e.g.
+  ///    via the `assign-rfc-number` label).
+  ///
+  /// Because the file is already numbered `110.0042`, this helper locates the
+  /// colliding RFC so [assign] can re-allocate it to the next available number
+  /// (e.g. `110.0043`) without requiring the author to manually revert to `.0000`.
+  Future<RfcFile> _reallocate(
+    List<FileSystemEntity> cachedEntries,
+    Future<Set<String>> Function() getMainFiles,
+  ) async {
+    final mainFiles = await getMainFiles();
+    final mainByCategoryIndex = <String, Set<String>>{};
+    for (final mainName in mainFiles.map(p.basename)) {
+      final match = RfcFile.filenamePattern.firstMatch(mainName);
+      if (match != null) {
+        final cat = match.group(1)!;
+        final idx = int.parse(match.group(2)!);
+        final key = '$cat.${idx.toNNNN()}';
+        (mainByCategoryIndex[key] ??= {}).add(mainName);
+      }
+    }
+
+    final collidingFiles = <File>[];
+    for (final entry in cachedEntries) {
+      if (entry is File) {
+        final fileName = p.basename(entry.path);
+        final match = RfcFile.filenamePattern.firstMatch(fileName);
+        if (match == null) continue;
+        final category = match.group(1)!;
+        final index = int.parse(match.group(2)!);
+        if (index == 0) continue;
+
+        final key = '$category.${index.toNNNN()}';
+        final mainNames = mainByCategoryIndex[key];
+        if (mainNames != null &&
+            mainNames.any((mainName) => mainName != fileName)) {
+          collidingFiles.add(entry);
         }
       }
+    }
 
-      final collidingFiles = <File>[];
-      for (final entry in cachedEntries) {
-        if (entry is File) {
-          final fileName = p.basename(entry.path);
-          final match = RfcFile.filenamePattern.firstMatch(fileName);
-          if (match == null) continue;
-          final category = match.group(1)!;
-          final index = int.parse(match.group(2)!);
-          if (index == 0) continue;
-
-          final key = '$category.${index.toNNNN()}';
-          final mainNames = mainByCategoryIndex[key];
-          if (mainNames != null &&
-              mainNames.any((mainName) => mainName != fileName)) {
-            collidingFiles.add(entry);
-          }
-        }
-      }
-
-      if (collidingFiles.length == 1) {
-        final collidingFile = collidingFiles.first;
-        final content = await collidingFile.readAsString();
-        return (
-          RfcFile.parse(content, path: collidingFile.path),
-          cachedEntries,
-        );
-      } else if (collidingFiles.length > 1) {
-        throw StateError(
-          'Multiple colliding RFCs found. Specify --target-file explicitly.',
-        );
-      } else {
-        throw StateError(
-          'No RFC requiring number assignment found in "$rfcDir". '
-          'Draft RFCs must use index ".0000" to be assigned a number.',
-        );
-      }
+    if (collidingFiles.length == 1) {
+      final collidingFile = collidingFiles.first;
+      final content = await collidingFile.readAsString();
+      return RfcFile.parse(content, path: collidingFile.path);
+    } else if (collidingFiles.length > 1) {
+      throw StateError(
+        'Multiple colliding RFCs found. Specify --target-file explicitly.',
+      );
+    } else {
+      throw StateError(
+        'No RFC requiring number assignment found in "$rfcDir". '
+        'Draft RFCs must use index ".0000" to be assigned a number.',
+      );
     }
   }
 }
