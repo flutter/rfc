@@ -37,6 +37,12 @@ enum RfcStatus {
   String toString() => value;
 }
 
+typedef RfcFrontmatterLoad = ({
+  RfcFrontmatter? frontmatter,
+  List<String> errors,
+  String? feedback,
+});
+
 /// Strongly-typed model representing validated YAML frontmatter of an RFC.
 class RfcFrontmatter {
   /// Document type. Must be `'rfc'`.
@@ -132,19 +138,64 @@ authors:
     for (var status in RfcStatus.values) status.value,
   ];
 
+  static int? _lineFor(
+    Map<dynamic, dynamic> yaml,
+    String key, {
+    int lineOffset = 2,
+  }) {
+    if (yaml is YamlMap) {
+      for (final entry in yaml.nodes.entries) {
+        final k = entry.key;
+        if (k is YamlNode && k.value == key) {
+          return k.span.start.line + lineOffset;
+        }
+      }
+      return 1;
+    }
+    return null;
+  }
+
+  static int? _lineForListItem(
+    Map<dynamic, dynamic> yaml,
+    String key,
+    int itemIndex, {
+    int lineOffset = 2,
+  }) {
+    if (yaml is YamlMap) {
+      final valueNode = yaml.nodes[key];
+      if (valueNode is YamlList && itemIndex < valueNode.nodes.length) {
+        return valueNode.nodes[itemIndex].span.start.line + lineOffset;
+      }
+      return _lineFor(yaml, key, lineOffset: lineOffset);
+    }
+    return null;
+  }
+
   /// Validates a mapping against the RFC frontmatter schema.
   ///
-  /// Returns a list of error messages with actionable feedback and expected formats.
+  /// Returns a list of error messages with actionable feedback, line numbers, and expected formats.
   /// An empty list indicates valid frontmatter.
-  static List<String> validate(Map<dynamic, dynamic> yaml) {
+  static List<String> validate(
+    Map<dynamic, dynamic> yaml, {
+    int lineOffset = 2,
+  }) {
     final errors = <String>[];
+
+    void addError(String key, String message, [int? itemIndex]) {
+      final line = itemIndex != null
+          ? _lineForListItem(yaml, key, itemIndex, lineOffset: lineOffset)
+          : _lineFor(yaml, key, lineOffset: lineOffset);
+      final prefix = line != null ? 'Line $line: ' : '';
+      errors.add('$prefix$message');
+    }
 
     // 1. type
     switch (yaml['type']) {
       case 'rfc':
         break;
       case final typeVal:
-        errors.add(
+        addError(
+          'type',
           'Frontmatter "type" must be "rfc" (found "$typeVal"). Expected format: "type: rfc".',
         );
     }
@@ -152,16 +203,18 @@ authors:
     // 2. rfc
     switch (yaml['rfc']) {
       case null:
-        errors.add(
+        addError(
+          'rfc',
           'Frontmatter "rfc" field is required. Missing value (found "null"). '
-          'Expected format: "AAA.NNNN" (e.g. \'000.0001\' or \'110.0000\').',
+              'Expected format: "AAA.NNNN" (e.g. \'000.0001\' or \'110.0000\').',
         );
       case final rfcVal:
         final rfcStr = '$rfcVal'.trim();
         if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(rfcStr)) {
-          errors.add(
+          addError(
+            'rfc',
             'Frontmatter "rfc" must match format "AAA.NNNN" (found "$rfcStr"). '
-            'Expected format: "AAA.NNNN" (3 digits, dot, 4 digits, e.g. \'000.0001\' or \'110.0000\').',
+                'Expected format: "AAA.NNNN" (3 digits, dot, 4 digits, e.g. \'000.0001\' or \'110.0000\').',
           );
         }
     }
@@ -169,59 +222,67 @@ authors:
     // 3. title
     switch (yaml['title']) {
       case null:
-        errors.add(
+        addError(
+          'title',
           'Frontmatter "title" is required and must be a non-empty string. '
-          'Missing value (found "null"). Expected format: title: Proposal Title.',
+              'Missing value (found "null"). Expected format: title: Proposal Title.',
         );
       case final String s when s.trim().isEmpty:
-        errors.add(
+        addError(
+          'title',
           'Frontmatter "title" is required and must be a non-empty string. '
-          'Found empty string. Expected format: title: Proposal Title.',
+              'Found empty string. Expected format: title: Proposal Title.',
         );
       case String():
         break;
       case final other:
-        errors.add(
+        addError(
+          'title',
           'Frontmatter "title" is required and must be a non-empty string. '
-          'Found ${other.runtimeType} "$other". Expected format: title: Proposal Title.',
+              'Found ${other.runtimeType} "$other". Expected format: title: Proposal Title.',
         );
     }
 
     // 4. description
     switch (yaml['description']) {
       case null:
-        errors.add(
+        addError(
+          'description',
           'Frontmatter "description" is required and must be a non-empty string. '
-          'Missing value (found "null"). Expected format: description: High-level summary description.',
+              'Missing value (found "null"). Expected format: description: High-level summary description.',
         );
       case final String s when s.trim().isEmpty:
-        errors.add(
+        addError(
+          'description',
           'Frontmatter "description" is required and must be a non-empty string. '
-          'Found empty string. Expected format: description: High-level summary description.',
+              'Found empty string. Expected format: description: High-level summary description.',
         );
       case String():
         break;
       case final other:
-        errors.add(
+        addError(
+          'description',
           'Frontmatter "description" is required and must be a non-empty string. '
-          'Found ${other.runtimeType} "$other". Expected format: description: High-level summary description.',
+              'Found ${other.runtimeType} "$other". Expected format: description: High-level summary description.',
         );
     }
 
     // 5. status
     switch (yaml['status']) {
       case null:
-        errors.add(
+        addError(
+          'status',
           'Frontmatter "status" must be one of: ${validStatusStrings.join(', ')} (found "null"). '
-          'Expected format: status: draft.',
+              'Expected format: status: draft.',
         );
       case final statusVal:
         final statusStr = statusVal.toString().trim();
         final parsedStatus = RfcStatus.tryParse(statusStr);
         if (parsedStatus == null) {
-          errors.add(
+          addError(
+            'status',
             'Frontmatter "status" must be one of: ${validStatusStrings.join(', ')} (found "$statusStr"). '
-            'Expected format: status: draft.',
+                'Expected format: status: draft.',
           );
         }
     }
@@ -230,87 +291,103 @@ authors:
     final createdVal = yaml['created'];
     final createdResult = _parseUtcTimestamp(createdVal, 'created');
     if (createdResult.error != null) {
-      errors.add(createdResult.error!);
+      addError('created', createdResult.error!);
     }
 
     // 7. updated
     final updatedVal = yaml['updated'];
     final updatedResult = _parseUtcTimestamp(updatedVal, 'updated');
     if (updatedResult.error != null) {
-      errors.add(updatedResult.error!);
+      addError('updated', updatedResult.error!);
     }
 
     // 8. tags
     switch (yaml['tags']) {
       case null:
-        errors.add(
+        addError(
+          'tags',
           'Frontmatter "tags" must be a non-empty list of strings. '
-          'Missing value (found "null"). Expected format:\ntags:\n  - 000-meta',
+              'Missing value (found "null"). Expected format:\ntags:\n  - 000-meta',
         );
       case final List<Object?> list when list.isEmpty:
-        errors.add(
+        addError(
+          'tags',
           'Frontmatter "tags" must be a non-empty list of strings. '
-          'Found empty list. Expected format:\ntags:\n  - 000-meta',
+              'Found empty list. Expected format:\ntags:\n  - 000-meta',
         );
       case final List<Object?> list:
-        for (final tag in list) {
+        for (var i = 0; i < list.length; i++) {
+          final tag = list[i];
           if (tag == null || tag.toString().trim().isEmpty) {
-            errors.add(
+            addError(
+              'tags',
               'Frontmatter "tags" items must be non-empty strings. Found "$tag". '
-              'Expected format: a list of non-empty category/topic strings (e.g. 000-meta).',
+                  'Expected format: a list of non-empty category/topic strings (e.g. 000-meta).',
+              i,
             );
             break;
           }
         }
       case final other:
-        errors.add(
+        addError(
+          'tags',
           'Frontmatter "tags" must be a non-empty list of strings. '
-          'Found ${other.runtimeType} "$other". Expected format:\ntags:\n  - 000-meta',
+              'Found ${other.runtimeType} "$other". Expected format:\ntags:\n  - 000-meta',
         );
     }
 
     // 9. authors
     switch (yaml['authors']) {
       case null:
-        errors.add(
+        addError(
+          'authors',
           'Frontmatter "authors" must be a non-empty list of authors. '
-          'Missing value (found "null"). Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
+              'Missing value (found "null"). Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
         );
       case final List<Object?> list when list.isEmpty:
-        errors.add(
+        addError(
+          'authors',
           'Frontmatter "authors" must be a non-empty list of authors. '
-          'Found empty list. Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
+              'Found empty list. Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
         );
       case final List<Object?> list:
-        for (final authorItem in list) {
+        for (var i = 0; i < list.length; i++) {
+          final authorItem = list[i];
           if (authorItem == null) {
-            errors.add(
+            addError(
+              'authors',
               'Author entries cannot be null. '
-              'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+              i,
             );
             continue;
           }
           final authorStr = authorItem.toString().trim();
           if (authorStr.isEmpty) {
-            errors.add(
+            addError(
+              'authors',
               'Author entries cannot be empty. '
-              'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+              i,
             );
             continue;
           }
           final parsedAuthor = RfcAuthor.tryParse(authorStr);
           if (parsedAuthor == null) {
-            errors.add(
+            addError(
+              'authors',
               'Author "$authorStr" must be a GitHub profile URL ("https://github.com/<username>") '
-              'or RFC 5322 mailbox (\'"Display Name" <user@example.com>\'). '
-              'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                  'or RFC 5322 mailbox (\'"Display Name" <user@example.com>\'). '
+                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+              i,
             );
           }
         }
       case final other:
-        errors.add(
+        addError(
+          'authors',
           'Frontmatter "authors" must be a non-empty list of authors. '
-          'Found ${other.runtimeType} "$other". Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
+              'Found ${other.runtimeType} "$other". Expected format:\nauthors:\n  - https://github.com/<username>\n  - \'"Display Name" <user@example.com>\'',
         );
     }
 
@@ -321,9 +398,10 @@ authors:
       case final supersedesVal:
         final sStr = supersedesVal.toString().trim();
         if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(sStr)) {
-          errors.add(
+          addError(
+            'supersedes',
             'Frontmatter "supersedes" must match format "AAA.NNNN" (found "$sStr"). '
-            'Expected format: 3 digits, dot, 4 digits (e.g. "000.0001").',
+                'Expected format: 3 digits, dot, 4 digits (e.g. "000.0001").',
           );
         }
     }
@@ -335,9 +413,10 @@ authors:
       case final supersededByVal:
         final sStr = supersededByVal.toString().trim();
         if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(sStr)) {
-          errors.add(
+          addError(
+            'superseded_by',
             'Frontmatter "superseded_by" must match format "AAA.NNNN" (found "$sStr"). '
-            'Expected format: 3 digits, dot, 4 digits (e.g. "000.0002").',
+                'Expected format: 3 digits, dot, 4 digits (e.g. "000.0002").',
           );
         }
     }
@@ -410,10 +489,9 @@ authors:
 
   /// Safely attempts to parse a [Map] or [YamlMap] into [RfcFrontmatter].
   ///
-  /// Returns a record with the parsed [frontmatter] (or `null`), any [errors],
-  /// and formatted [feedback] (or `null` if valid).
-  static ({RfcFrontmatter? frontmatter, List<String> errors, String? feedback})
-  tryLoad(dynamic yaml) {
+  /// Returns a RfcFrontmatterLoad record with the parsed [frontmatter]
+  /// (or `null`), any [errors], and formatted [feedback] (or `null` if valid).
+  static RfcFrontmatterLoad tryLoad(dynamic yaml) {
     if (yaml is! Map) {
       const err = 'YAML frontmatter must be a key-value mapping.';
       return (

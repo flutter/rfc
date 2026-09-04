@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:convert';
+
 import 'package:clock/clock.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
-import 'rfc_author.dart';
 import 'rfc_frontmatter.dart';
 
 export 'rfc_author.dart';
@@ -50,9 +51,6 @@ class RfcFile {
   /// Parsed strongly-typed RFC frontmatter, or null if missing or invalid schema.
   final RfcFrontmatter? frontmatter;
 
-  /// Underlying raw YamlMap, or null if missing or invalid YAML syntax.
-  final YamlMap? rawYamlFrontmatter;
-
   /// Structural or syntax error message encountered while parsing frontmatter
   /// (e.g. unclosed delimiter or invalid YAML syntax), if any.
   ///
@@ -78,8 +76,8 @@ class RfcFile {
   /// Line number (1-based) where the first level-1 heading was found in the file.
   final int? firstHeadingLine;
 
-  /// Line ending detected from the original file content (`\r\n` or `\n`).
-  final String lineEnding;
+  /// Error message encountered while parsing the document heading, if any.
+  final String? headingError;
 
   const RfcFile._({
     required this.path,
@@ -89,7 +87,6 @@ class RfcFile {
     required this.hasFrontmatter,
     required this.frontmatterRaw,
     required this.frontmatter,
-    required this.rawYamlFrontmatter,
     required this.frontmatterError,
     required this.frontmatterErrors,
     required this.body,
@@ -97,7 +94,7 @@ class RfcFile {
     required this.firstHeadingId,
     required this.firstHeadingTitle,
     required this.firstHeadingLine,
-    required this.lineEnding,
+    required this.headingError,
   });
 
   /// Regular expression for RFC filenames: `AAA.NNNN-<slug>.md`.
@@ -133,175 +130,220 @@ class RfcFile {
       frontmatterErrors.isEmpty &&
       frontmatter != null;
 
-  /// Frontmatter `type` field value.
-  String? get frontmatterType =>
-      frontmatter?.type ?? rawYamlFrontmatter?['type']?.toString();
+  /// Whether the document has a valid first level-1 heading.
+  bool get hasValidHeading =>
+      headingError == null && firstHeading != null && firstHeadingId != null;
 
-  /// Frontmatter `rfc` field value.
-  String? get frontmatterRfc =>
-      frontmatter?.rfc ?? rawYamlFrontmatter?['rfc']?.toString();
-
-  /// Frontmatter `title` field value.
-  String? get frontmatterTitle =>
-      frontmatter?.title ?? rawYamlFrontmatter?['title']?.toString();
-
-  /// Frontmatter `description` field value.
-  String? get frontmatterDescription =>
-      frontmatter?.description ??
-      rawYamlFrontmatter?['description']?.toString();
-
-  /// Frontmatter `status` field value.
-  String? get frontmatterStatus =>
-      frontmatter?.status.value ?? rawYamlFrontmatter?['status']?.toString();
-
-  /// Frontmatter `tags` list.
-  List<String>? get frontmatterTags {
-    if (frontmatter != null) return frontmatter!.tags;
-    final val = rawYamlFrontmatter?['tags'];
-    if (val is List) {
-      return [...val.map((e) => '$e')];
-    }
-    return null;
-  }
-
-  /// Frontmatter `authors` list as strings.
-  List<String>? get frontmatterAuthors {
-    if (frontmatter != null) {
-      return frontmatter!.authors.map((a) => a.raw).toList();
-    }
-    final val = rawYamlFrontmatter?['authors'];
-    if (val is List) {
-      return [...val.map((e) => '$e')];
-    }
-    return null;
-  }
-
-  /// Frontmatter `supersedes` field value.
-  String? get frontmatterSupersedes =>
-      frontmatter?.supersedes ?? rawYamlFrontmatter?['supersedes']?.toString();
-
-  /// Frontmatter `superseded_by` field value.
-  String? get frontmatterSupersededBy =>
-      frontmatter?.supersededBy ??
-      rawYamlFrontmatter?['superseded_by']?.toString();
-
-  /// Strongly-typed frontmatter `authors` list.
-  List<RfcAuthor>? get authors => frontmatter?.authors;
-
-  /// Parses an RFC markdown file content.
-  static RfcFile parse(String content, {required String path}) {
+  /// Extracts category, index, and slug from an RFC file path.
+  static ({String? category, int? index, String? slug}) _parseFilename(
+    String path,
+  ) {
     final fileName = p.basename(path);
     final fnMatch = filenamePattern.firstMatch(fileName);
     final category = fnMatch?.group(1);
     final indexStr = fnMatch?.group(2);
     final index = indexStr != null ? int.tryParse(indexStr) : null;
     final slug = fnMatch?.group(3);
+    return (category: category, index: index, slug: slug);
+  }
 
-    // Parse frontmatter
-    final isCrlf = content.contains('\r\n');
-    final lineEnding = isCrlf ? '\r\n' : '\n';
-
-    bool hasFrontmatter = false;
-    String frontmatterRaw = '';
-    RfcFrontmatter? frontmatter;
-    YamlMap? rawYamlFrontmatter;
-    String? frontmatterError;
-    final frontmatterErrors = <String>[];
-    String body = content;
-    int frontmatterLineCount = 0;
-
-    final lines = content.split(RegExp(r'\r?\n'));
-    if (lines.isNotEmpty && lines.first.trim() == '---') {
-      int closingLine = -1;
-      for (int i = 1; i < lines.length; i++) {
-        if (lines[i].trim() == '---') {
-          closingLine = i;
-          break;
-        }
-      }
-      if (closingLine != -1) {
-        hasFrontmatter = true;
-        frontmatterRaw = lines.sublist(1, closingLine).join(lineEnding);
-        body = lines.sublist(closingLine + 1).join(lineEnding);
-        frontmatterLineCount = closingLine + 1;
-
-        try {
-          final loaded = loadYaml(frontmatterRaw);
-          if (loaded is YamlMap) {
-            rawYamlFrontmatter = loaded;
-            final loadResult = RfcFrontmatter.tryLoad(loaded);
-            if (loadResult.frontmatter != null) {
-              frontmatter = loadResult.frontmatter;
-            } else {
-              frontmatterErrors.addAll(loadResult.errors);
-            }
-          } else if (loaded == null) {
-            rawYamlFrontmatter = YamlMap();
-            frontmatterErrors.addAll(
-              RfcFrontmatter.validate(rawYamlFrontmatter),
-            );
-          } else {
-            frontmatterError = 'YAML frontmatter must be a key-value mapping.';
-            frontmatterErrors.add(frontmatterError);
-          }
-        } catch (e) {
-          frontmatterError = 'Failed to parse YAML frontmatter: $e';
-          frontmatterErrors.add(frontmatterError);
-        }
-      } else {
-        frontmatterError =
-            'Unclosed YAML frontmatter delimiter (missing closing `---`).';
-        frontmatterErrors.add(frontmatterError);
-      }
-    } else {
-      frontmatterError =
-          'File does not start with YAML frontmatter delimiter `---`.';
-      frontmatterErrors.add(frontmatterError);
+  /// Separates YAML frontmatter block from markdown body.
+  static ({
+    bool hasFrontmatter,
+    String frontmatterRaw,
+    String body,
+    int frontmatterLineCount,
+    String? structuralError,
+  })
+  _splitFrontmatter(String content) {
+    final lines = [...LineSplitter.split(content)];
+    if (lines.isEmpty || lines.first.trim() != '---') {
+      return (
+        hasFrontmatter: false,
+        frontmatterRaw: '',
+        body: content,
+        frontmatterLineCount: 0,
+        structuralError:
+            'Line 1: File does not start with YAML frontmatter delimiter `---`.',
+      );
     }
 
-    // Find first level-1 heading outside of code fences
-    String? firstHeading;
-    String? firstHeadingId;
-    String? firstHeadingTitle;
-    int? firstHeadingLine;
+    int closingLine = -1;
+    for (int i = 1; i < lines.length; i++) {
+      if (lines[i].trim() == '---') {
+        closingLine = i;
+        break;
+      }
+    }
 
-    final bodyLines = body.split(isCrlf ? '\r\n' : '\n');
-    bool inCodeBlock = false;
-    for (int i = 0; i < bodyLines.length; i++) {
-      final line = bodyLines[i].trim();
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
+    if (closingLine == -1) {
+      return (
+        hasFrontmatter: false,
+        frontmatterRaw: '',
+        body: content,
+        frontmatterLineCount: 0,
+        structuralError:
+            'Line 1: Unclosed YAML frontmatter delimiter (missing closing `---`).',
+      );
+    }
+
+    return (
+      hasFrontmatter: true,
+      frontmatterRaw: lines.sublist(1, closingLine).join('\n'),
+      body: lines.sublist(closingLine + 1).join('\n'),
+      frontmatterLineCount: closingLine + 1,
+      structuralError: null,
+    );
+  }
+
+  /// Parses and validates YAML frontmatter content.
+  static ({RfcFrontmatter? frontmatter, String? error, List<String> errors})
+  _parseFrontmatter(String frontmatterRaw) {
+    try {
+      final loaded = loadYaml(frontmatterRaw);
+      switch (loaded) {
+        case final YamlMap map:
+          final loadResult = RfcFrontmatter.tryLoad(map);
+          return (
+            frontmatter: loadResult.frontmatter,
+            error: null,
+            errors: loadResult.errors,
+          );
+        case null:
+          final empty = YamlMap();
+          return (
+            frontmatter: null,
+            error: null,
+            errors: RfcFrontmatter.validate(empty),
+          );
+        default:
+          const err = 'Line 2: YAML frontmatter must be a key-value mapping.';
+          return (frontmatter: null, error: err, errors: [err]);
+      }
+    } catch (e) {
+      final err = switch (e) {
+        YamlException(:final span?, :final message) =>
+          'Line ${span.start.line + 2}: Failed to parse YAML frontmatter: $message',
+        _ => 'Line 2: Failed to parse YAML frontmatter: $e',
+      };
+      return (frontmatter: null, error: err, errors: [err]);
+    }
+  }
+
+  /// Locates and parses the first level-1 heading on the first non-empty line of the markdown body.
+  static ({
+    String? heading,
+    String? id,
+    String? title,
+    int? line,
+    String? error,
+  })
+  _findFirstHeading(
+    String body,
+    int frontmatterLineCount, {
+    String? expectedId,
+    String? expectedTitle,
+  }) {
+    final idPart = expectedId ?? 'AAA.NNNN';
+    final titlePart = (expectedTitle != null && expectedTitle.trim().isNotEmpty)
+        ? expectedTitle.trim()
+        : '<Title>';
+    final expectedFormat = '# RFC $idPart: $titlePart';
+
+    int lineOffset = 0;
+    for (final rawLine in LineSplitter.split(body)) {
+      final line = rawLine.trim();
+      if (line.isEmpty) {
+        lineOffset++;
         continue;
       }
-      if (!inCodeBlock && line.startsWith('# ')) {
+      final lineNum = frontmatterLineCount + lineOffset + 1;
+      if (line.startsWith('# ')) {
         final headingMatch = headingPattern.firstMatch(line);
-        firstHeading = line;
-        firstHeadingLine = frontmatterLineCount + i + 1;
-        if (headingMatch != null) {
-          firstHeadingId = headingMatch.group(1);
-          firstHeadingTitle = headingMatch.group(2)?.trim() ?? '';
-        }
-        break; // Only the first level-1 heading
+        return (
+          heading: line,
+          id: headingMatch?.group(1),
+          title: headingMatch?.group(2)?.trim() ?? '',
+          line: lineNum,
+          error: headingMatch == null
+              ? 'Line $lineNum: Heading must match format "$expectedFormat".'
+              : null,
+        );
       }
+      return (
+        heading: null,
+        id: null,
+        title: null,
+        line: lineNum,
+        error: line.startsWith('#')
+            ? 'Line $lineNum: First heading must be a level-1 heading (`# ...`), but found a deeper heading level.'
+            : 'Line $lineNum: Markdown body must begin with a level-1 heading (`$expectedFormat`).',
+      );
     }
+    final lineNum = frontmatterLineCount + 1;
+    return (
+      heading: null,
+      id: null,
+      title: null,
+      line: lineNum,
+      error:
+          'Line $lineNum: Markdown body must begin with a level-1 heading (`$expectedFormat`).',
+    );
+  }
+
+  /// Converts a kebab-case slug into Title Case (e.g. `extract-value-notifier` -> `Extract Value Notifier`).
+  static String _slugToTitle(String slug) {
+    return slug
+        .split('-')
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' ');
+  }
+
+  /// Parses an RFC markdown file content.
+  static RfcFile parse(String content, {required String path}) {
+    final (:category, :index, :slug) = _parseFilename(path);
+    final expectedId = category != null && index != null
+        ? '$category.${index.toNNNN()}'
+        : null;
+
+    final split = _splitFrontmatter(content);
+    final parsedFm = split.hasFrontmatter
+        ? _parseFrontmatter(split.frontmatterRaw)
+        : (
+            frontmatter: null,
+            error: split.structuralError,
+            errors: [if (split.structuralError != null) split.structuralError!],
+          );
+
+    final rawTitle = parsedFm.frontmatter?.title;
+    final expectedTitle = (rawTitle != null && rawTitle.trim().isNotEmpty)
+        ? rawTitle.trim()
+        : (slug != null ? _slugToTitle(slug) : null);
+
+    final heading = _findFirstHeading(
+      split.body,
+      split.frontmatterLineCount,
+      expectedId: expectedId,
+      expectedTitle: expectedTitle,
+    );
 
     return RfcFile._(
       path: path,
       category: category,
       index: index,
       slug: slug,
-      hasFrontmatter: hasFrontmatter,
-      frontmatterRaw: frontmatterRaw,
-      frontmatter: frontmatter,
-      rawYamlFrontmatter: rawYamlFrontmatter,
-      frontmatterError: frontmatterError,
-      frontmatterErrors: List.unmodifiable(frontmatterErrors),
-      body: body,
-      firstHeading: firstHeading,
-      firstHeadingId: firstHeadingId,
-      firstHeadingTitle: firstHeadingTitle,
-      firstHeadingLine: firstHeadingLine,
-      lineEnding: lineEnding,
+      hasFrontmatter: split.hasFrontmatter,
+      frontmatterRaw: split.frontmatterRaw,
+      frontmatter: parsedFm.frontmatter,
+      frontmatterError: parsedFm.error,
+      frontmatterErrors: List.unmodifiable(parsedFm.errors),
+      body: split.body,
+      firstHeading: heading.heading,
+      firstHeadingId: heading.id,
+      firstHeadingTitle: heading.title,
+      firstHeadingLine: heading.line,
+      headingError: heading.error,
     );
   }
 
@@ -356,24 +398,23 @@ class RfcFile {
       );
     }
 
-    final nl = lineEnding;
     final newId = '$newCategoryStr.$newIndexStr';
-
     final timestamp = (updatedTime ?? clock.now()).toUtc().toIso8601String();
 
     // Update frontmatter lines
-    final fmLines = frontmatterRaw.split(RegExp(r'\r?\n'));
+    final fmLines = <String>[];
     bool rfcReplaced = false;
     bool updatedReplaced = false;
 
-    for (int i = 0; i < fmLines.length; i++) {
-      final line = fmLines[i];
+    for (final line in LineSplitter.split(frontmatterRaw)) {
       if (RegExp(r'^rfc:\s*.*$').hasMatch(line)) {
-        fmLines[i] = "rfc: '$newId'";
+        fmLines.add("rfc: '$newId'");
         rfcReplaced = true;
       } else if (RegExp(r'^updated:\s*.*$').hasMatch(line)) {
-        fmLines[i] = 'updated: $timestamp';
+        fmLines.add('updated: $timestamp');
         updatedReplaced = true;
+      } else {
+        fmLines.add(line);
       }
     }
 
@@ -384,34 +425,31 @@ class RfcFile {
       fmLines.add('updated: $timestamp');
     }
 
-    final newFrontmatterRaw = fmLines.join(nl);
+    final newFrontmatterRaw = fmLines.join('\n');
 
-    // Update first level-1 heading in body, strictly outside of code blocks
-    final bodyLines = body.split(RegExp(r'\r?\n'));
-    bool inCodeBlock = false;
+    // Update first level-1 heading in body
+    final bodyLines = <String>[];
     bool headingReplaced = false;
 
-    for (int i = 0; i < bodyLines.length; i++) {
-      final line = bodyLines[i];
-      final trimmed = line.trim();
-      if (trimmed.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        continue;
-      }
-      if (!inCodeBlock && !headingReplaced) {
-        final match = headingPattern.firstMatch(trimmed);
-        if (match != null) {
-          final title = match.group(2)?.trim() ?? '';
-          bodyLines[i] = title.isNotEmpty
-              ? '# RFC $newId: $title'
-              : '# RFC $newId';
-          headingReplaced = true;
-          break;
+    for (final line in LineSplitter.split(body)) {
+      if (!headingReplaced) {
+        final trimmed = line.trim();
+        if (trimmed.isNotEmpty) {
+          final match = headingPattern.firstMatch(trimmed);
+          if (match != null) {
+            final title = match.group(2)?.trim() ?? '';
+            bodyLines.add(
+              title.isNotEmpty ? '# RFC $newId: $title' : '# RFC $newId',
+            );
+            headingReplaced = true;
+            continue;
+          }
         }
       }
+      bodyLines.add(line);
     }
 
-    final newBody = bodyLines.join(nl);
-    return '---$nl$newFrontmatterRaw$nl---$nl$newBody';
+    final newBody = bodyLines.join('\n');
+    return '---\n$newFrontmatterRaw\n---\n$newBody';
   }
 }
