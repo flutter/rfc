@@ -7,31 +7,46 @@ import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
 
 import 'git_lister.dart';
+import 'github_annotation.dart';
 import 'models/rfc_file.dart';
 
 export 'git_lister.dart' show GitListFunction, defaultGitList;
 
 /// A validation error encountered during semantic RFC validation.
-class ValidationError {
+class ValidationError implements GithubAnnotatable {
   final String filePath;
   final String message;
+  final int? line;
+  final int? column;
 
-  const ValidationError({required this.filePath, required this.message});
+  const ValidationError({
+    required this.filePath,
+    required this.message,
+    this.line,
+    this.column,
+  });
 
   /// Formats the error as a GitHub Actions workflow annotation.
   ///
   /// Percent-encodes special characters (%, \r, \n) per GitHub Actions workflow
   /// command specifications.
-  String toGithubAnnotation() {
-    final encoded = message
-        .replaceAll('%', '%25')
-        .replaceAll('\r', '%0D')
-        .replaceAll('\n', '%0A');
-    return '::error file=$filePath::$encoded';
-  }
+  @override
+  String toGithubAnnotation() => message.toGithubAnnotation(
+    filePath: filePath,
+    line: line,
+    column: column,
+  );
 
   @override
-  String toString() => '$filePath: $message';
+  String toString() {
+    if (line != null) {
+      if (column != null) {
+        return '$filePath:$line:$column: $message';
+      }
+      return '$filePath:$line: $message';
+    }
+    return '$filePath: $message';
+  }
 }
 
 /// Result of RFC semantic number validation.
@@ -199,16 +214,15 @@ class RfcValidator {
         baseBranchCategory: baseBranchCategory,
         errors: errors,
       );
-      _checkBaseBranchGaps(
-        category: category,
-        rfcs: rfcs,
-        baseBranch: baseBranch,
-        baseBranchCategory: baseBranchCategory,
-        errors: errors,
-      );
-    } else {
-      _checkWorkingTreeGaps(category: category, rfcs: rfcs, errors: errors);
     }
+
+    _checkGaps(
+      category: category,
+      rfcs: rfcs,
+      baseBranch: checkMain ? baseBranch : null,
+      baseBranchCategory: checkMain ? baseBranchCategory : null,
+      errors: errors,
+    );
   }
 
   /// Discovers and indexes RFC files on [baseBranch] grouped by category `AAA`.
@@ -292,77 +306,52 @@ class RfcValidator {
     }
   }
 
-  /// Ensures newly introduced RFCs in [category] are strictly sequential
-  /// following the latest RFC on [baseBranch] without gaps.
-  void _checkBaseBranchGaps({
+  /// Ensures assigned RFC numbers in [category] are strictly sequential without gaps.
+  ///
+  /// When [baseBranch] is provided, validates that new RFCs follow the latest landed RFC
+  /// on [baseBranch]. When omitted, validates that working tree RFCs start at 0001 and
+  /// are contiguous.
+  void _checkGaps({
     required String category,
     required List<RfcFile> rfcs,
-    required String baseBranch,
-    required _BaseBranchCategory? baseBranchCategory,
     required List<ValidationError> errors,
+    String? baseBranch,
+    _BaseBranchCategory? baseBranchCategory,
   }) {
-    final newRfcs = [
+    final candidateRfcs = [
       for (var rfc in rfcs)
         if (!rfc.isDraft &&
             rfc.index != null &&
-            baseBranchCategory?.rfcIdToBasename[rfc.rfcId] == null)
+            (baseBranchCategory == null ||
+                baseBranchCategory.rfcIdToBasename[rfc.rfcId] == null))
           rfc,
     ]..sort((a, b) => a.index!.compareTo(b.index!));
 
-    final maxOnMain = baseBranchCategory?.maxIndex ?? 0;
-    var expectedNext = maxOnMain + 1;
+    final maxBase = baseBranch != null
+        ? (baseBranchCategory?.maxIndex ?? 0)
+        : 0;
+    final contextSuffix = baseBranch != null
+        ? (maxBase == 0
+              ? ' (no RFCs exist in category "$category" in $baseBranch)'
+              : ' (the latest RFC is "$category.${maxBase.toNNNN()}" in $baseBranch)')
+        : '';
 
-    for (final newRfc in newRfcs) {
-      final actualIndex = newRfc.index!;
+    var expectedNext = maxBase + 1;
+    for (final rfc in candidateRfcs) {
+      final actualIndex = rfc.index!;
       if (actualIndex > expectedNext) {
         final expectedPadded = expectedNext.toNNNN();
-        final maxPadded = maxOnMain.toNNNN();
-        final mainContext = maxOnMain == 0
-            ? 'no RFCs exist in category "$category"'
-            : 'the latest RFC is "$category.$maxPadded"';
-        errors.add(
-          ValidationError(
-            filePath: newRfc.path,
-            message:
-                'RFC number "${newRfc.rfcId}" creates a numbering gap. '
-                'Expected next sequential number is "$category.$expectedPadded" ($mainContext in $baseBranch).',
-          ),
-        );
-        expectedNext = actualIndex + 1;
-      } else if (actualIndex == expectedNext) {
-        expectedNext++;
-      }
-    }
-  }
-
-  /// Ensures assigned RFC numbers in [category] start at 0001 and are
-  /// strictly contiguous within the working tree.
-  void _checkWorkingTreeGaps({
-    required String category,
-    required List<RfcFile> rfcs,
-    required List<ValidationError> errors,
-  }) {
-    final nonDraftRfcs = [
-      for (var rfc in rfcs)
-        if (!rfc.isDraft && rfc.index != null) rfc,
-    ]..sort((a, b) => a.index!.compareTo(b.index!));
-
-    var expectedIndex = 1;
-    for (final rfc in nonDraftRfcs) {
-      final actualIndex = rfc.index!;
-      if (actualIndex > expectedIndex) {
-        final expectedPadded = expectedIndex.toNNNN();
         errors.add(
           ValidationError(
             filePath: rfc.path,
             message:
                 'RFC number "${rfc.rfcId}" creates a numbering gap. '
-                'Expected next sequential number is "$category.$expectedPadded".',
+                'Expected next sequential number is "$category.$expectedPadded"$contextSuffix.',
           ),
         );
-        expectedIndex = actualIndex + 1;
-      } else if (actualIndex == expectedIndex) {
-        expectedIndex++;
+        expectedNext = actualIndex + 1;
+      } else if (actualIndex == expectedNext) {
+        expectedNext++;
       }
     }
   }
