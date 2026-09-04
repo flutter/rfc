@@ -32,16 +32,17 @@ void main(List<String> arguments) async {
   } catch (e) {
     stderr.writeln('Error parsing arguments: $e\n');
     stderr.writeln(parser.usage);
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   if (results.flag('help')) {
     stdout.writeln('RFC Number Assigner - Flutter RFC Repository Tooling\n');
     stdout.writeln(parser.usage);
-    exit(0);
+    return;
   }
 
-  final targetFile = results.option('target-file');
+  final targetFile = results.rest.firstOrNull ?? results.option('target-file');
   final dryRun = results.flag('dry-run');
 
   const fs = LocalFileSystem();
@@ -68,14 +69,17 @@ void main(List<String> arguments) async {
 
       final githubOutput = Platform.environment['GITHUB_OUTPUT'];
       if (githubOutput != null && githubOutput.isNotEmpty) {
-        await File(githubOutput).writeAsString(
-          'rfc_id=${result.newRfcId}\nnew_path=${result.newPath}\n',
-          mode: FileMode.append,
-        );
+        await fs
+            .file(githubOutput)
+            .writeAsString(
+              'rfc_id=${result.newRfcId}\nnew_path=${result.newPath}\n',
+              mode: FileMode.append,
+            );
       }
     }
   } catch (e) {
     stderr.writeln('Assignment failed: $e');
-    exit(1);
+    exitCode = 1;
+    return;
   }
 }
