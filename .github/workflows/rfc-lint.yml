@@ -33,17 +33,44 @@ jobs:
       - name: Install Dependencies
         run: dart pub get
 
-      - name: Run RFC Linter (PR Mode)
+      - name: Get Changed RFCs
+        id: changed-rfcs
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          BASE_TARGET="origin/${BASE_REF:-main}"
+          if ! git rev-parse --verify "$BASE_TARGET" >/dev/null 2>&1; then
+            BASE_TARGET="main"
+          fi
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET"...HEAD -- 'rfc/*.md' 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET" -- 'rfc/*.md' 2>/dev/null || true)
+          fi
+          if [ -n "$FILES" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "files<<EOF"
+              echo "$FILES"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run RFC Linter (PR Mode)
+        if: github.event_name == 'pull_request' && steps.changed-rfcs.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          CHANGED_FILES: ${{ steps.changed-rfcs.outputs.files }}
         run: |
           dart run bin/rfc_lint.dart \
             --enforce-drafts \
             --labels "$LABELS" \
             --validate-github-users \
-            --github-actions
+            --github-actions \
+            $CHANGED_FILES
 
       - name: Run RFC Linter (Merge Queue & Main Mode)
         if: github.event_name != 'pull_request'
@@ -54,7 +81,15 @@ jobs:
             --validate-github-users \
             --github-actions
 
-      - name: Markdown Lint
+      - name: Markdown Lint (PR Mode)
+        if: github.event_name == 'pull_request' && steps.changed-rfcs.outputs.has_changes == 'true'
+        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
+        with:
+          globs: ${{ steps.changed-rfcs.outputs.files }}
+
+      - name: Markdown Lint (Full Repository)
+        if: github.event_name != 'pull_request'
         uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
         with:
           globs: 'rfc/**/*.md'
+
