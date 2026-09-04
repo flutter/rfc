@@ -97,6 +97,31 @@ class RfcFile {
     required this.headingError,
   });
 
+  /// Creates an [RfcFile] from a file path with parsed filename components,
+  /// without reading or parsing markdown content or frontmatter.
+  ///
+  /// Useful for lightweight filename-based validation.
+  factory RfcFile.fromPath(String path) {
+    final parsed = _parseFilename(path);
+    return RfcFile._(
+      path: path,
+      category: parsed.category,
+      index: parsed.index,
+      slug: parsed.slug,
+      hasFrontmatter: false,
+      frontmatterRaw: '',
+      frontmatter: null,
+      frontmatterError: null,
+      frontmatterErrors: const [],
+      body: '',
+      firstHeading: null,
+      firstHeadingId: null,
+      firstHeadingTitle: null,
+      firstHeadingLine: null,
+      headingError: null,
+    );
+  }
+
   /// Regular expression for RFC filenames: `AAA.NNNN-<slug>.md`.
   static final RegExp filenamePattern = RegExp(
     r'^(\d{3})\.(\d{4})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$',
@@ -133,6 +158,11 @@ class RfcFile {
   /// Whether the document has a valid first level-1 heading.
   bool get hasValidHeading =>
       headingError == null && firstHeading != null && firstHeadingId != null;
+
+  /// Extracts category, index, and slug from an RFC file path.
+  static ({String? category, int? index, String? slug}) parseFilename(
+    String path,
+  ) => _parseFilename(path);
 
   /// Extracts category, index, and slug from an RFC file path.
   static ({String? category, int? index, String? slug}) _parseFilename(

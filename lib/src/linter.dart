@@ -5,12 +5,13 @@
 import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
 
+import 'github_annotation.dart';
 import 'github_client.dart';
 import 'models/rfc_file.dart';
 import 'taxonomy.dart';
 
 /// A lint issue discovered in an RFC document.
-class LintIssue {
+class LintIssue implements GithubAnnotatable {
   final String filePath;
   final int line;
   final int column;
@@ -27,13 +28,12 @@ class LintIssue {
   ///
   /// Percent-encodes special characters (%, \r, \n) per GitHub Actions workflow
   /// command specifications so multiline schema templates are preserved cleanly.
-  String toGithubAnnotation() {
-    final encoded = message
-        .replaceAll('%', '%25')
-        .replaceAll('\r', '%0D')
-        .replaceAll('\n', '%0A');
-    return '::error file=$filePath,line=$line,col=$column::$encoded';
-  }
+  @override
+  String toGithubAnnotation() => message.toGithubAnnotation(
+    filePath: filePath,
+    line: line,
+    column: column,
+  );
 
   @override
   String toString() => '$filePath:$line:$column: $message';
