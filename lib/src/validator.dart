@@ -119,7 +119,7 @@ class RfcValidator {
     final rfcsByCategory = <String, List<RfcFile>>{};
     for (final entry in entries) {
       if (entry is File && entry.path.endsWith('.md')) {
-        final rfc = RfcFile.parse('', path: entry.path);
+        final rfc = RfcFile.fromPath(entry.path);
 
         _validateFileStructure(
           rfc: rfc,

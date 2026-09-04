@@ -44,13 +44,14 @@ void main(List<String> arguments) async {
   } catch (e) {
     stderr.writeln('Error parsing arguments: $e\n');
     stderr.writeln(parser.usage);
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   if (results.flag('help')) {
     stdout.writeln('RFC Semantic Validator - Flutter RFC Repository Tooling\n');
     stdout.writeln(parser.usage);
-    exit(0);
+    return;
   }
 
   final checkMain = results.flag('check-main');
@@ -76,11 +77,11 @@ void main(List<String> arguments) async {
         stderr.writeln('[ERROR] $error');
       }
     }
-    exit(1);
+    exitCode = 1;
+    return;
   }
 
   stdout.writeln(
     'RFC numbers validated cleanly. No collisions or illegal drafts found.',
   );
-  exit(0);
 }
