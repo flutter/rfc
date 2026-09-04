@@ -1,4 +1,4 @@
-// Copyright 2026 The Flutter Authors. All rights reserved.
+// Copyright 2026 The Flutter Authors.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -102,6 +102,35 @@ void main() {
         expect(em.name, equals('René François'));
         expect(em.email, equals('rene@example.com'));
       });
+
+      test(
+        'parses mailbox with plus sign in email address (sub-addressing)',
+        () {
+          final author = RfcAuthor.parse(
+            '"Jacque Blanderson" <jacque+blanderson@google.com>',
+          );
+          expect(author, isA<EmailAuthor>());
+          final em = author as EmailAuthor;
+          expect(em.name, equals('Jacque Blanderson'));
+          expect(em.email, equals('jacque+blanderson@google.com'));
+          expect(
+            em.raw,
+            equals('"Jacque Blanderson" <jacque+blanderson@google.com>'),
+          );
+
+          // Case-insensitivity check with plus address
+          const a1 = EmailAuthor(
+            name: 'Jacque Blanderson',
+            email: 'jacque+blanderson@google.com',
+          );
+          const a2 = EmailAuthor(
+            name: 'Jacque Blanderson',
+            email: 'JACQUE+BLANDERSON@GOOGLE.COM',
+          );
+          expect(a1, equals(a2));
+          expect(a1.hashCode, equals(a2.hashCode));
+        },
+      );
 
       test('rejects bare email address without display name', () {
         expect(RfcAuthor.tryParse('user@example.com'), isNull);
