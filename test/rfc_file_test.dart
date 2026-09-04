@@ -83,6 +83,35 @@ Some markdown text.
       expect(rfc.firstHeadingTitle, equals('Extract Value Notifier'));
     });
 
+    test(
+      'RfcFile.fromPath parses filename components without reading content',
+      () {
+        final rfc = RfcFile.fromPath('rfc/110.0001-extract-value-notifier.md');
+        expect(rfc.hasValidFilename, isTrue);
+        expect(rfc.category, equals('110'));
+        expect(rfc.index, equals(1));
+        expect(rfc.slug, equals('extract-value-notifier'));
+        expect(rfc.rfcId, equals('110.0001'));
+        expect(rfc.isDraft, isFalse);
+        expect(rfc.hasFrontmatter, isFalse);
+        expect(rfc.frontmatter, isNull);
+        expect(rfc.body, isEmpty);
+        expect(rfc.firstHeading, isNull);
+      },
+    );
+
+    test('RfcFile.parseFilename extracts filename components', () {
+      final parsed = RfcFile.parseFilename('rfc/000.0002-review-process.md');
+      expect(parsed.category, equals('000'));
+      expect(parsed.index, equals(2));
+      expect(parsed.slug, equals('review-process'));
+
+      final invalid = RfcFile.parseFilename('rfc/README.md');
+      expect(invalid.category, isNull);
+      expect(invalid.index, isNull);
+      expect(invalid.slug, isNull);
+    });
+
     test('parses email authors into typed RfcAuthor list', () {
       const emailSample = '''---
 type: rfc
