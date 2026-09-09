@@ -37,9 +37,12 @@ enum RfcStatus {
   String toString() => value;
 }
 
+/// Represents a frontmatter validation error with its 1-indexed document line number.
+typedef FrontmatterError = ({int line, String error});
+
 typedef RfcFrontmatterLoad = ({
   RfcFrontmatter? frontmatter,
-  List<String> errors,
+  List<FrontmatterError> errors,
   String? feedback,
 });
 
@@ -123,11 +126,14 @@ authors:
   static const String exampleTemplate = expectedSchemaTemplate;
 
   /// Formats a list of validation [errors] alongside the canonical expected schema template.
-  static String formatErrors(List<String> errors, {String? schemaTemplate}) {
+  static String formatErrors(
+    List<FrontmatterError> errors, {
+    String? schemaTemplate,
+  }) {
     final template = schemaTemplate ?? expectedSchemaTemplate;
     final buffer = StringBuffer('Invalid RFC frontmatter:\n');
-    for (final err in errors) {
-      buffer.writeln('  - $err');
+    for (final (:line, :error) in errors) {
+      buffer.writeln('  - Line $line: $error');
     }
     buffer.writeln();
     buffer.writeln('Expected frontmatter format:');
@@ -167,15 +173,14 @@ authors:
   ///
   /// Returns a list of error messages with actionable feedback, line numbers, and expected formats.
   /// An empty list indicates valid frontmatter.
-  static List<String> validate(YamlMap yaml, {int lineOffset = 2}) {
-    final errors = <String>[];
+  static List<FrontmatterError> validate(YamlMap yaml, {int lineOffset = 2}) {
+    final errors = <FrontmatterError>[];
 
     void addError(String key, String message, [int? itemIndex]) {
       final line = itemIndex != null
           ? _lineForListItem(yaml, key, itemIndex, lineOffset: lineOffset)
           : _lineFor(yaml, key, lineOffset: lineOffset);
-      final prefix = line != null ? 'Line $line: ' : '';
-      errors.add('$prefix$message');
+      errors.add((line: line ?? lineOffset, error: message));
     }
 
     // 1. type
@@ -465,12 +470,16 @@ authors:
       loaded = loadYaml(yamlString);
     } catch (e) {
       throw FormatException(
-        formatErrors(['Failed to parse YAML frontmatter: $e']),
+        formatErrors([
+          (line: 1, error: 'Failed to parse YAML frontmatter: $e'),
+        ]),
       );
     }
     if (loaded is! YamlMap) {
       throw FormatException(
-        formatErrors(const ['YAML frontmatter must be a key-value mapping.']),
+        formatErrors(const [
+          (line: 1, error: 'YAML frontmatter must be a key-value mapping.'),
+        ]),
       );
     }
     return RfcFrontmatter.fromYaml(loaded);
@@ -492,11 +501,15 @@ authors:
     try {
       return (
         frontmatter: RfcFrontmatter.fromYaml(yaml),
-        errors: const <String>[],
+        errors: const <FrontmatterError>[],
         feedback: null,
       );
     } on FormatException catch (e) {
-      return (frontmatter: null, errors: [e.message], feedback: e.message);
+      return (
+        frontmatter: null,
+        errors: [(line: 1, error: e.message)],
+        feedback: e.message,
+      );
     }
   }
 

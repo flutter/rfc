@@ -83,7 +83,9 @@ superseded_by: '110.0002'
             loadYaml(validYaml.replaceAll('type: rfc', '')) as YamlMap;
         final errors1 = RfcFrontmatter.validate(yamlMissing);
         expect(
-          errors1.any((e) => e.contains('Frontmatter "type" must be "rfc"')),
+          errors1.any(
+            (e) => e.error.contains('Frontmatter "type" must be "rfc"'),
+          ),
           isTrue,
         );
 
@@ -92,7 +94,9 @@ superseded_by: '110.0002'
         final errors2 = RfcFrontmatter.validate(yamlInvalid);
         expect(
           errors2.any(
-            (e) => e.contains('Frontmatter "type" must be "rfc" (found "doc")'),
+            (e) => e.error.contains(
+              'Frontmatter "type" must be "rfc" (found "doc")',
+            ),
           ),
           isTrue,
         );
@@ -104,7 +108,7 @@ superseded_by: '110.0002'
         final errors1 = RfcFrontmatter.validate(yamlMissing);
         expect(
           errors1.any(
-            (e) => e.contains('Frontmatter "rfc" field is required.'),
+            (e) => e.error.contains('Frontmatter "rfc" field is required.'),
           ),
           isTrue,
         );
@@ -115,7 +119,9 @@ superseded_by: '110.0002'
         final errors2 = RfcFrontmatter.validate(yamlInvalid);
         expect(
           errors2.any(
-            (e) => e.contains('Frontmatter "rfc" must match format "AAA.NNNN"'),
+            (e) => e.error.contains(
+              'Frontmatter "rfc" must match format "AAA.NNNN"',
+            ),
           ),
           isTrue,
         );
@@ -127,7 +133,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlMissing).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "title" is required and must be a non-empty string.',
             ),
           ),
@@ -144,7 +150,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlEmpty).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "title" is required and must be a non-empty string.',
             ),
           ),
@@ -163,7 +169,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlMissing).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "description" is required and must be a non-empty string.',
             ),
           ),
@@ -175,9 +181,9 @@ superseded_by: '110.0002'
         final yamlMissing =
             loadYaml(validYaml.replaceAll('status: stable', '')) as YamlMap;
         expect(
-          RfcFrontmatter.validate(
-            yamlMissing,
-          ).any((e) => e.contains('Frontmatter "status" must be one of:')),
+          RfcFrontmatter.validate(yamlMissing).any(
+            (e) => e.error.contains('Frontmatter "status" must be one of:'),
+          ),
           isTrue,
         );
 
@@ -192,7 +198,7 @@ superseded_by: '110.0002'
         expect(
           RfcFrontmatter.validate(
             yamlInvalid,
-          ).any((e) => e.contains('(found "invalid_status")')),
+          ).any((e) => e.error.contains('(found "invalid_status")')),
           isTrue,
         );
       });
@@ -208,7 +214,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlLocal).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "created" must be an ISO 8601 UTC timestamp',
             ),
           ),
@@ -225,7 +231,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlNotDate).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "updated" must be an ISO 8601 UTC timestamp',
             ),
           ),
@@ -277,7 +283,7 @@ superseded_by: '110.0002'
           expect(errors, isNotEmpty);
           expect(
             errors.any(
-              (e) => e.contains(
+              (e) => e.error.contains(
                 'Frontmatter "created" must be an ISO 8601 UTC timestamp',
               ),
             ),
@@ -303,7 +309,7 @@ superseded_by: '110.0002'
           final errors = RfcFrontmatter.validate(YamlMap.wrap(yamlIntCreated));
           expect(
             errors.any(
-              (e) => e.contains(
+              (e) => e.error.contains(
                 'Frontmatter "created" must be an ISO 8601 UTC timestamp. Found "123456"',
               ),
             ),
@@ -326,7 +332,7 @@ superseded_by: '110.0002'
           );
           expect(
             boolErrors.any(
-              (e) => e.contains(
+              (e) => e.error.contains(
                 'Frontmatter "created" must be an ISO 8601 UTC timestamp. Found "true"',
               ),
             ),
@@ -349,7 +355,7 @@ superseded_by: '110.0002'
           );
           expect(
             listErrors.any(
-              (e) => e.contains(
+              (e) => e.error.contains(
                 'Frontmatter "updated" must be an ISO 8601 UTC timestamp. Found "[2026, 8, 27]"',
               ),
             ),
@@ -369,7 +375,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlNotList).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "tags" must be a non-empty list of strings.',
             ),
           ),
@@ -386,7 +392,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlEmptyList).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "tags" must be a non-empty list of strings.',
             ),
           ),
@@ -403,7 +409,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlEmptyItem).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "tags" items must be non-empty strings.',
             ),
           ),
@@ -422,7 +428,7 @@ superseded_by: '110.0002'
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(yamlEmptyList).any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "authors" must be a non-empty list of authors.',
             ),
           ),
@@ -440,7 +446,7 @@ superseded_by: '110.0002'
         expect(
           RfcFrontmatter.validate(
             yamlInvalidAuthor,
-          ).any((e) => e.contains('Author "not a valid author" must be')),
+          ).any((e) => e.error.contains('Author "not a valid author" must be')),
           isTrue,
         );
       });
@@ -455,7 +461,7 @@ superseded_by: 'invalid'
         final errors = RfcFrontmatter.validate(yaml);
         expect(
           errors.any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "supersedes" must match format "AAA.NNNN"',
             ),
           ),
@@ -463,7 +469,7 @@ superseded_by: 'invalid'
         );
         expect(
           errors.any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "superseded_by" must match format "AAA.NNNN"',
             ),
           ),
@@ -552,7 +558,7 @@ superseded_by: 'invalid'
         final errors = RfcFrontmatter.validate(yaml);
         expect(
           errors.any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "title" is required and must be a non-empty string.',
             ),
           ),
@@ -560,7 +566,7 @@ superseded_by: 'invalid'
         );
         expect(
           errors.any(
-            (e) => e.contains(
+            (e) => e.error.contains(
               'Frontmatter "description" is required and must be a non-empty string.',
             ),
           ),
@@ -603,32 +609,32 @@ tags:
           expect(errors.length, equals(2));
 
           final updatedError = errors.firstWhere(
-            (e) => e.contains('"updated"'),
+            (e) => e.error.contains('"updated"'),
           );
           expect(
-            updatedError,
+            updatedError.error,
             contains(
               'Frontmatter "updated" must be an ISO 8601 UTC timestamp.',
             ),
           );
-          expect(updatedError, contains('found "null"'));
+          expect(updatedError.error, contains('found "null"'));
           expect(
-            updatedError,
+            updatedError.error,
             contains('Expected format: YYYY-MM-DDTHH:MM:SSZ'),
           );
 
           final authorsError = errors.firstWhere(
-            (e) => e.contains('"authors"'),
+            (e) => e.error.contains('"authors"'),
           );
           expect(
-            authorsError,
+            authorsError.error,
             contains(
               'Frontmatter "authors" must be a non-empty list of authors.',
             ),
           );
-          expect(authorsError, contains('found "null"'));
-          expect(authorsError, contains('Expected format:'));
-          expect(authorsError, contains('https://github.com/<username>'));
+          expect(authorsError.error, contains('found "null"'));
+          expect(authorsError.error, contains('Expected format:'));
+          expect(authorsError.error, contains('https://github.com/<username>'));
         },
       );
 
@@ -636,15 +642,15 @@ tags:
         final emptyYaml = YamlMap();
         final errors = RfcFrontmatter.validate(emptyYaml);
 
-        expect(errors.any((e) => e.contains('"type"')), isTrue);
-        expect(errors.any((e) => e.contains('"rfc"')), isTrue);
-        expect(errors.any((e) => e.contains('"title"')), isTrue);
-        expect(errors.any((e) => e.contains('"description"')), isTrue);
-        expect(errors.any((e) => e.contains('"status"')), isTrue);
-        expect(errors.any((e) => e.contains('"created"')), isTrue);
-        expect(errors.any((e) => e.contains('"updated"')), isTrue);
-        expect(errors.any((e) => e.contains('"tags"')), isTrue);
-        expect(errors.any((e) => e.contains('"authors"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"type"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"rfc"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"title"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"description"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"status"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"created"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"updated"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"tags"')), isTrue);
+        expect(errors.any((e) => e.error.contains('"authors"')), isTrue);
       });
 
       test(
@@ -690,12 +696,12 @@ tags:
         'formatErrors formats error list and appends expected schema template',
         () {
           final formatted = RfcFrontmatter.formatErrors([
-            'Error one.',
-            'Error two.',
+            (line: 1, error: 'Error one.'),
+            (line: 2, error: 'Error two.'),
           ]);
           expect(formatted, contains('Invalid RFC frontmatter:'));
-          expect(formatted, contains('  - Error one.'));
-          expect(formatted, contains('  - Error two.'));
+          expect(formatted, contains('  - Line 1: Error one.'));
+          expect(formatted, contains('  - Line 2: Error two.'));
           expect(formatted, contains('Expected frontmatter format:'));
           expect(formatted, contains('type: rfc'));
           expect(formatted, contains('rfc: \'000.0001\''));
@@ -753,12 +759,15 @@ authors:
             final errors = RfcFrontmatter.validate(yamlWithoutUpdated);
             expect(errors.length, equals(1));
             expect(
-              errors.first,
+              errors.first.error,
               contains(
                 'Frontmatter "updated" must be an ISO 8601 UTC timestamp.',
               ),
             );
-            expect(errors.first, contains('(e.g. 2026-09-15T14:30:45.000Z).'));
+            expect(
+              errors.first.error,
+              contains('(e.g. 2026-09-15T14:30:45.000Z).'),
+            );
           });
         },
       );
@@ -786,12 +795,15 @@ authors:
             final errors = RfcFrontmatter.validate(yamlWithoutCreated);
             expect(errors.length, equals(1));
             expect(
-              errors.first,
+              errors.first.error,
               contains(
                 'Frontmatter "created" must be an ISO 8601 UTC timestamp.',
               ),
             );
-            expect(errors.first, contains('(e.g. 2026-10-05T08:12:00.000Z).'));
+            expect(
+              errors.first.error,
+              contains('(e.g. 2026-10-05T08:12:00.000Z).'),
+            );
           });
         },
       );
@@ -819,8 +831,11 @@ authors:
 
             final errors = RfcFrontmatter.validate(yamlInvalidUpdated);
             expect(errors.length, equals(1));
-            expect(errors.first, contains('Found "not-a-valid-date"'));
-            expect(errors.first, contains('(e.g. 2026-11-20T23:59:59.000Z).'));
+            expect(errors.first.error, contains('Found "not-a-valid-date"'));
+            expect(
+              errors.first.error,
+              contains('(e.g. 2026-11-20T23:59:59.000Z).'),
+            );
           });
         },
       );
@@ -843,13 +858,14 @@ authors:
             }),
           );
           expect(
-            errors,
-            contains(
-              allOf(
-                contains('Found non-UTC'),
-                contains('(e.g. ${localTime.toUtc().toIso8601String()}).'),
-              ),
+            errors.any(
+              (e) =>
+                  e.error.contains('Found non-UTC') &&
+                  e.error.contains(
+                    '(e.g. ${localTime.toUtc().toIso8601String()}).',
+                  ),
             ),
+            isTrue,
           );
         });
       });
@@ -878,7 +894,10 @@ authors:
             final errors = RfcFrontmatter.validate(yamlWithoutUpdated);
             expect(errors.length, equals(1));
             // 02:00 at +14:00 corresponds to 12:00 on previous day in UTC
-            expect(errors.first, contains('(e.g. 2026-09-01T12:00:00.000Z).'));
+            expect(
+              errors.first.error,
+              contains('(e.g. 2026-09-01T12:00:00.000Z).'),
+            );
           });
         },
       );

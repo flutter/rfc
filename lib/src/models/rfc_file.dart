@@ -50,7 +50,7 @@ class RfcFile {
   final RfcFrontmatter? frontmatter;
 
   /// All validation error messages encountered while parsing frontmatter.
-  final List<String> frontmatterErrors;
+  final List<FrontmatterError> frontmatterErrors;
 
   /// Markdown content after the closing `---` delimiter.
   final String body;
@@ -159,7 +159,7 @@ class RfcFile {
     String frontmatterRaw,
     String body,
     int frontmatterLineCount,
-    String? structuralError,
+    FrontmatterError? structuralError,
   })
   _splitFrontmatter(String content) {
     final match = frontMatterPattern.firstMatch(content);
@@ -170,9 +170,12 @@ class RfcFile {
         frontmatterRaw: '',
         body: content,
         frontmatterLineCount: 0,
-        structuralError: hasOpening
-            ? 'Line 1: Unclosed YAML frontmatter delimiter (missing closing `---`).'
-            : 'Line 1: File does not start with YAML frontmatter delimiter `---`.',
+        structuralError: (
+          line: 1,
+          error: hasOpening
+              ? 'Unclosed YAML frontmatter delimiter (missing closing `---`).'
+              : 'File does not start with YAML frontmatter delimiter `---`.',
+        ),
       );
     }
 
@@ -188,9 +191,8 @@ class RfcFile {
   }
 
   /// Parses and validates YAML frontmatter content.
-  static ({RfcFrontmatter? frontmatter, List<String> errors}) _parseFrontmatter(
-    String frontmatterRaw,
-  ) {
+  static ({RfcFrontmatter? frontmatter, List<FrontmatterError> errors})
+  _parseFrontmatter(String frontmatterRaw) {
     try {
       final loaded = loadYaml(frontmatterRaw);
       switch (loaded) {
@@ -204,19 +206,24 @@ class RfcFile {
           final empty = YamlMap();
           return (frontmatter: null, errors: RfcFrontmatter.validate(empty));
         default:
-          const err = 'Line 2: YAML frontmatter must be a key-value mapping.';
+          const err = (
+            line: 2,
+            error: 'YAML frontmatter must be a key-value mapping.',
+          );
           return (frontmatter: null, errors: [err]);
       }
     } on YamlException catch (e) {
       final line = (e.span?.start.line ?? 0) + 2;
-      final error =
-          'Line $line: Failed to parse YAML frontmatter: ${e.message}';
+      final error = (
+        line: line,
+        error: 'Failed to parse YAML frontmatter: ${e.message}',
+      );
 
       return (frontmatter: null, errors: [error]);
     } catch (e) {
       return (
         frontmatter: null,
-        errors: ['Line 2: Failed to parse YAML frontmatter: $e'],
+        errors: [(line: 2, error: 'Failed to parse YAML frontmatter: $e')],
       );
     }
   }

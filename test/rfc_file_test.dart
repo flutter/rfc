@@ -140,11 +140,17 @@ title: Incomplete Frontmatter
         expect(rfc.frontmatter, isNull);
         expect(rfc.frontmatterErrors, isNotEmpty);
         expect(
-          rfc.frontmatterErrors.any((e) => e.contains('description')),
+          rfc.frontmatterErrors.any((e) => e.error.contains('description')),
           isTrue,
         );
-        expect(rfc.frontmatterErrors.any((e) => e.contains('status')), isTrue);
-        expect(rfc.frontmatterErrors.any((e) => e.contains('created')), isTrue);
+        expect(
+          rfc.frontmatterErrors.any((e) => e.error.contains('status')),
+          isTrue,
+        );
+        expect(
+          rfc.frontmatterErrors.any((e) => e.error.contains('created')),
+          isTrue,
+        );
 
         // Rich feedback provides complete view of errors and expected format
         expect(rfc.frontmatterFeedback, isNotNull);
@@ -187,30 +193,33 @@ tags:
         expect(rfc.frontmatterErrors.length, equals(2));
 
         final updatedErr = rfc.frontmatterErrors.firstWhere(
-          (e) => e.contains('"updated"'),
+          (e) => e.error.contains('"updated"'),
         );
         expect(
-          updatedErr,
+          updatedErr.error,
           contains('Frontmatter "updated" must be an ISO 8601 UTC timestamp.'),
         );
-        expect(updatedErr, contains('Expected format: YYYY-MM-DDTHH:MM:SSZ'));
+        expect(
+          updatedErr.error,
+          contains('Expected format: YYYY-MM-DDTHH:MM:SSZ'),
+        );
 
         final authorsErr = rfc.frontmatterErrors.firstWhere(
-          (e) => e.contains('"authors"'),
+          (e) => e.error.contains('"authors"'),
         );
         expect(
-          authorsErr,
+          authorsErr.error,
           contains(
             'Frontmatter "authors" must be a non-empty list of authors.',
           ),
         );
-        expect(authorsErr, contains('Expected format:'));
+        expect(authorsErr.error, contains('Expected format:'));
 
         // Complete view of frontmatter with expected format
         expect(rfc.frontmatterFeedback, isNotNull);
         expect(rfc.frontmatterFeedback, contains('Invalid RFC frontmatter:'));
-        expect(rfc.frontmatterFeedback, contains(updatedErr));
-        expect(rfc.frontmatterFeedback, contains(authorsErr));
+        expect(rfc.frontmatterFeedback, contains(updatedErr.error));
+        expect(rfc.frontmatterFeedback, contains(authorsErr.error));
         expect(
           rfc.frontmatterFeedback,
           contains('Expected frontmatter format:'),
@@ -362,9 +371,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-no-fm.md',
         );
         expect(rfc.hasFrontmatter, isFalse);
-        expect(rfc.frontmatterErrors.first, startsWith('Line 1: '));
+        expect(rfc.frontmatterErrors.first.line, equals(1));
         expect(
-          rfc.frontmatterErrors.first,
+          rfc.frontmatterErrors.first.error,
           contains(
             'File does not start with YAML frontmatter delimiter `---`.',
           ),
@@ -377,9 +386,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-unclosed.md',
         );
         expect(rfc.hasFrontmatter, isFalse);
-        expect(rfc.frontmatterErrors.first, startsWith('Line 1: '));
+        expect(rfc.frontmatterErrors.first.line, equals(1));
         expect(
-          rfc.frontmatterErrors.first,
+          rfc.frontmatterErrors.first.error,
           contains('Unclosed YAML frontmatter delimiter'),
         );
       });
@@ -390,9 +399,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-scalar.md',
         );
         expect(rfc.hasFrontmatter, isTrue);
-        expect(rfc.frontmatterErrors.first, startsWith('Line 2: '));
+        expect(rfc.frontmatterErrors.first.line, equals(2));
         expect(
-          rfc.frontmatterErrors.first,
+          rfc.frontmatterErrors.first.error,
           contains('YAML frontmatter must be a key-value mapping.'),
         );
       });
@@ -407,9 +416,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-bad-yaml.md',
         );
         expect(rfc.hasFrontmatter, isTrue);
-        expect(rfc.frontmatterErrors.first, startsWith('Line 3: '));
+        expect(rfc.frontmatterErrors.first.line, equals(3));
         expect(
-          rfc.frontmatterErrors.first,
+          rfc.frontmatterErrors.first.error,
           contains('Failed to parse YAML frontmatter:'),
         );
       });
@@ -447,9 +456,9 @@ authors: [https://github.com/octocat]
         expect(rfc.hasValidFrontmatter, isFalse);
         expect(rfc.frontmatterErrors, isNotEmpty);
         final statusError = rfc.frontmatterErrors.firstWhere(
-          (e) => e.contains('"status"'),
+          (e) => e.error.contains('"status"'),
         );
-        expect(statusError, startsWith('Line 6: '));
+        expect(statusError.line, equals(6));
       });
     });
 
