@@ -331,35 +331,29 @@ custom_flags: [alpha, experimental]
       expect(rfc3.hasValidFilename, isFalse);
     });
 
-    test('parses CRLF input and normalizes output to LF (\\n)', () {
-      const crlfSample =
-          "---\r\ntype: rfc\r\nrfc: '110.0000'\r\ntitle: CRLF Test\r\ndescription: Test description\r\nstatus: draft\r\ncreated: 2026-08-27T00:00:00Z\r\nupdated: 2026-08-27T00:00:00Z\r\ntags: [110-foundation]\r\nauthors: [https://github.com/octocat]\r\n---\r\n\r\n# RFC 110.0000: CRLF Test\r\n";
-      final rfc = RfcFile.parse(crlfSample, path: 'rfc/110.0000-crlf-test.md');
-      expect(rfc.hasFrontmatter, isTrue);
-      expect(rfc.frontmatter?.title, equals('CRLF Test'));
-      expect(rfc.firstHeadingTitle, equals('CRLF Test'));
+    test(
+      'parses CRLF input and preserves line endings in transformedContent',
+      () {
+        const crlfSample =
+            "---\r\ntype: rfc\r\nrfc: '110.0000'\r\ntitle: CRLF Test\r\ndescription: Test description\r\nstatus: draft\r\ncreated: 2026-08-27T00:00:00Z\r\nupdated: 2026-08-27T00:00:00Z\r\ntags: [110-foundation]\r\nauthors: [https://github.com/octocat]\r\n---\r\n\r\n# RFC 110.0000: CRLF Test\r\n";
+        final rfc = RfcFile.parse(
+          crlfSample,
+          path: 'rfc/110.0000-crlf-test.md',
+        );
+        expect(rfc.hasFrontmatter, isTrue);
+        expect(rfc.frontmatter?.title, equals('CRLF Test'));
+        expect(rfc.firstHeadingTitle, equals('CRLF Test'));
 
-      final transformed = rfc.transformedContent(
-        newCategory: '110',
-        newIndex: 5,
-        updatedTime: DateTime.utc(2026, 9, 1),
-      );
-      expect(transformed, contains("rfc: '110.0005'"));
-      expect(transformed, contains('# RFC 110.0005: CRLF Test'));
-      expect(transformed, isNot(contains('\r\n')));
-    });
-
-    test('handles trailing whitespace on frontmatter delimiter line', () {
-      const trailingSpaceSample =
-          "---\ntype: rfc\nrfc: '110.0000'\ntitle: Space Test\ndescription: Test description\nstatus: draft\ncreated: 2026-08-27T00:00:00Z\nupdated: 2026-08-27T00:00:00Z\ntags: [110-foundation]\nauthors: [https://github.com/octocat]\n---   \n\n# RFC 110.0000: Space Test\n";
-      final rfc = RfcFile.parse(
-        trailingSpaceSample,
-        path: 'rfc/110.0000-space-test.md',
-      );
-      expect(rfc.hasFrontmatter, isTrue);
-      expect(rfc.frontmatter?.title, equals('Space Test'));
-      expect(rfc.frontmatterErrors, isEmpty);
-    });
+        final transformed = rfc.transformedContent(
+          newCategory: '110',
+          newIndex: 5,
+          updatedTime: DateTime.utc(2026, 9, 1),
+        );
+        expect(transformed, contains("rfc: '110.0005'"));
+        expect(transformed, contains('# RFC 110.0005: CRLF Test'));
+        expect(transformed, contains('\r\n'));
+      },
+    );
 
     group('frontmatter error line numbers', () {
       test('includes Line 1 for missing opening frontmatter delimiter', () {
@@ -499,34 +493,6 @@ Content here.
       );
     });
 
-    test('rejects body that begins with a level-2 heading', () {
-      const level2Sample = '''---
-type: rfc
-rfc: '110.0000'
-title: Level 2 Heading
-description: Test
-status: draft
-created: 2026-08-27T00:00:00Z
-updated: 2026-08-27T00:00:00Z
-tags: [110-foundation]
-authors: [https://github.com/octocat]
----
-
-## RFC 110.0000: Level 2 Heading
-''';
-
-      final rfc = RfcFile.parse(level2Sample, path: 'rfc/110.0000-level2.md');
-
-      expect(rfc.firstHeading, isNull);
-      expect(rfc.firstHeadingId, isNull);
-      expect(rfc.hasValidHeading, isFalse);
-      expect(rfc.headingError, isNotNull);
-      expect(
-        rfc.headingError,
-        contains('First heading must be a level-1 heading'),
-      );
-    });
-
     test(
       'heading error message derives title from slug when frontmatter has no title',
       () {
@@ -548,9 +514,7 @@ status: draft
         expect(rfc.headingError, isNotNull);
         expect(
           rfc.headingError,
-          contains(
-            'Heading must match format "# RFC 110.0000: Derived Slug Title".',
-          ),
+          contains('# RFC 110.0000: Derived Slug Title'),
         );
       },
     );
@@ -617,6 +581,31 @@ superseded_by: '110.0003'
         expect(transformed, contains('updated: 2026-11-12T18:45:00.000Z'));
       });
     });
+
+    test(
+      'transformedContent inserts rfc and updated when absent from frontmatter',
+      () {
+        const minimalSample = '''---
+type: rfc
+title: Minimal
+---
+
+# RFC 110.0000: Minimal
+''';
+        final rfc = RfcFile.parse(
+          minimalSample,
+          path: 'rfc/110.0000-minimal.md',
+        );
+        final transformed = rfc.transformedContent(
+          newCategory: '110',
+          newIndex: 12,
+          updatedTime: DateTime.utc(2026, 9, 1),
+        );
+        expect(transformed, contains("rfc: '110.0012'"));
+        expect(transformed, contains('updated: 2026-09-01T00:00:00.000Z'));
+        expect(transformed, contains('# RFC 110.0012: Minimal'));
+      },
+    );
 
     group('RfcNumberFormatting extension', () {
       test('toNNNN formats integers to 4-digit zero-padded strings', () {

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:convert';
-
 import 'package:clock/clock.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
@@ -97,6 +95,25 @@ class RfcFile {
   /// Regular expression for first level-1 RFC heading: `# RFC AAA.NNNN: <Title>`.
   static final RegExp headingPattern = RegExp(
     r'^#\s+RFC\s+(\d{3}\.\d{4})(?::\s*(.*))?$',
+    multiLine: true,
+  );
+
+  /// Regular expression to match the yaml frontmatter.
+  static final RegExp frontMatterPattern = RegExp(
+    r'^---\r?\n(.*?)\r?\n---(?:\r?\n|$)',
+    dotAll: true,
+  );
+
+  /// Regular expression to match an existing `rfc:` key in frontmatter.
+  static final RegExp _rfcFrontmatterPattern = RegExp(
+    r'^rfc:\s*.*$',
+    multiLine: true,
+  );
+
+  /// Regular expression to match an existing `updated:` key in frontmatter.
+  static final RegExp _updatedFrontmatterPattern = RegExp(
+    r'^updated:\s*.*$',
+    multiLine: true,
   );
 
   /// Whether the file name conforms to `AAA.NNNN-<slug>.md`.
@@ -145,42 +162,27 @@ class RfcFile {
     String? structuralError,
   })
   _splitFrontmatter(String content) {
-    final lines = [...LineSplitter.split(content)];
-    if (lines.isEmpty || lines.first.trim() != '---') {
+    final match = frontMatterPattern.firstMatch(content);
+    if (match == null) {
+      final hasOpening = content.startsWith('---');
       return (
         hasFrontmatter: false,
         frontmatterRaw: '',
         body: content,
         frontmatterLineCount: 0,
-        structuralError:
-            'Line 1: File does not start with YAML frontmatter delimiter `---`.',
+        structuralError: hasOpening
+            ? 'Line 1: Unclosed YAML frontmatter delimiter (missing closing `---`).'
+            : 'Line 1: File does not start with YAML frontmatter delimiter `---`.',
       );
     }
 
-    int closingLine = -1;
-    for (int i = 1; i < lines.length; i++) {
-      if (lines[i].trim() == '---') {
-        closingLine = i;
-        break;
-      }
-    }
-
-    if (closingLine == -1) {
-      return (
-        hasFrontmatter: false,
-        frontmatterRaw: '',
-        body: content,
-        frontmatterLineCount: 0,
-        structuralError:
-            'Line 1: Unclosed YAML frontmatter delimiter (missing closing `---`).',
-      );
-    }
+    final lineCount = '\n'.allMatches(content.substring(0, match.end)).length;
 
     return (
       hasFrontmatter: true,
-      frontmatterRaw: lines.sublist(1, closingLine).join('\n'),
-      body: lines.sublist(closingLine + 1).join('\n'),
-      frontmatterLineCount: closingLine + 1,
+      frontmatterRaw: match.group(1)!,
+      body: content.substring(match.end),
+      frontmatterLineCount: lineCount,
       structuralError: null,
     );
   }
@@ -239,44 +241,28 @@ class RfcFile {
         : '<Title>';
     final expectedFormat = '# RFC $idPart: $titlePart';
 
-    int lineOffset = 0;
-    for (final rawLine in LineSplitter.split(body)) {
-      final line = rawLine.trim();
-      if (line.isEmpty) {
-        lineOffset++;
-        continue;
-      }
-      final lineNum = frontmatterLineCount + lineOffset + 1;
-      if (line.startsWith('# ')) {
-        final headingMatch = headingPattern.firstMatch(line);
-        return (
-          heading: line,
-          id: headingMatch?.group(1),
-          title: headingMatch?.group(2)?.trim() ?? '',
-          line: lineNum,
-          error: headingMatch == null
-              ? 'Line $lineNum: Heading must match format "$expectedFormat".'
-              : null,
-        );
-      }
+    final match = headingPattern.firstMatch(body);
+    if (match == null || body.substring(0, match.start).trim().isNotEmpty) {
+      final line = frontmatterLineCount + 1;
       return (
         heading: null,
         id: null,
         title: null,
-        line: lineNum,
-        error: line.startsWith('#')
-            ? 'Line $lineNum: First heading must be a level-1 heading (`# ...`), but found a deeper heading level.'
-            : 'Line $lineNum: Markdown body must begin with a level-1 heading (`$expectedFormat`).',
+        line: line,
+        error:
+            'Line $line: Markdown body must begin with a level-1 heading (`$expectedFormat`).',
       );
     }
-    final lineNum = frontmatterLineCount + 1;
+    final lineNumber =
+        frontmatterLineCount +
+        '\n'.allMatches(body.substring(0, match.start)).length +
+        1;
     return (
-      heading: null,
-      id: null,
-      title: null,
-      line: lineNum,
-      error:
-          'Line $lineNum: Markdown body must begin with a level-1 heading (`$expectedFormat`).',
+      heading: body.substring(match.start, match.end),
+      id: match.group(1),
+      title: match.group(2)?.trim() ?? '',
+      line: lineNumber,
+      error: null,
     );
   }
 
@@ -356,54 +342,38 @@ class RfcFile {
     final timestamp = (updatedTime ?? clock.now()).toUtc().toIso8601String();
 
     // Update frontmatter lines
-    final fmLines = <String>[];
-    bool rfcReplaced = false;
-    bool updatedReplaced = false;
+    String newFrontmatterRaw = frontmatterRaw;
 
-    for (final line in LineSplitter.split(frontmatterRaw)) {
-      if (RegExp(r'^rfc:\s*.*$').hasMatch(line)) {
-        fmLines.add("rfc: '$newId'");
-        rfcReplaced = true;
-      } else if (RegExp(r'^updated:\s*.*$').hasMatch(line)) {
-        fmLines.add('updated: $timestamp');
-        updatedReplaced = true;
-      } else {
-        fmLines.add(line);
-      }
+    if (_rfcFrontmatterPattern.hasMatch(newFrontmatterRaw)) {
+      newFrontmatterRaw = newFrontmatterRaw.replaceFirst(
+        _rfcFrontmatterPattern,
+        "rfc: '$newId'",
+      );
+    } else {
+      newFrontmatterRaw = "rfc: '$newId'\n$newFrontmatterRaw";
     }
 
-    if (!rfcReplaced) {
-      fmLines.insert(0, "rfc: '$newId'");
+    if (_updatedFrontmatterPattern.hasMatch(newFrontmatterRaw)) {
+      newFrontmatterRaw = newFrontmatterRaw.replaceFirst(
+        _updatedFrontmatterPattern,
+        'updated: $timestamp',
+      );
+    } else {
+      newFrontmatterRaw = '$newFrontmatterRaw\nupdated: $timestamp';
     }
-    if (!updatedReplaced) {
-      fmLines.add('updated: $timestamp');
-    }
-
-    final newFrontmatterRaw = fmLines.join('\n');
+    newFrontmatterRaw = newFrontmatterRaw.trim();
 
     // Update first level-1 heading in body
-    final bodyLines = <String>[];
-    bool headingReplaced = false;
-
-    for (final line in LineSplitter.split(body)) {
-      if (!headingReplaced) {
-        final trimmed = line.trim();
-        if (trimmed.isNotEmpty) {
-          final match = headingPattern.firstMatch(trimmed);
-          if (match != null) {
-            final title = match.group(2)?.trim() ?? '';
-            bodyLines.add(
-              title.isNotEmpty ? '# RFC $newId: $title' : '# RFC $newId',
-            );
-            headingReplaced = true;
-            continue;
-          }
-        }
-      }
-      bodyLines.add(line);
+    String newBody = body;
+    final headingResult = _findFirstHeading(newBody, 0);
+    if (headingResult.heading != null) {
+      final title = headingResult.title ?? '';
+      final newHeading = title.isNotEmpty
+          ? '# RFC $newId: $title'
+          : '# RFC $newId';
+      newBody = newBody.replaceFirst(headingResult.heading!, newHeading);
     }
 
-    final newBody = bodyLines.join('\n');
     return '---\n$newFrontmatterRaw\n---\n$newBody';
   }
 }
