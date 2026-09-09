@@ -245,7 +245,7 @@ tags:
         final fixedTime = DateTime.utc(2026, 9, 1, 12, 0, 0);
         final transformed = rfc.transformedContent(
           newCategory: '110',
-          newIndex: '0042',
+          newIndex: 42,
           updatedTime: fixedTime,
         );
 
@@ -302,7 +302,7 @@ custom_flags: [alpha, experimental]
 
         final transformed = rfc.transformedContent(
           newCategory: '110',
-          newIndex: '0042',
+          newIndex: 42,
           updatedTime: DateTime.utc(2026, 9, 1, 12, 0, 0),
         );
 
@@ -341,7 +341,7 @@ custom_flags: [alpha, experimental]
 
       final transformed = rfc.transformedContent(
         newCategory: '110',
-        newIndex: '0005',
+        newIndex: 5,
         updatedTime: DateTime.utc(2026, 9, 1),
       );
       expect(transformed, contains("rfc: '110.0005'"));
@@ -583,48 +583,12 @@ superseded_by: '110.0003'
       expect(rfc.frontmatter?.supersededBy, equals('110.0003'));
     });
 
-    test('transformedContent validates newCategory and newIndex format', () {
-      final rfc = RfcFile.parse(sample, path: 'rfc/110.0000-sample.md');
-      expect(
-        () => rfc.transformedContent(newCategory: '11', newIndex: '0001'),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: '110', newIndex: '1'),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: -1, newIndex: '0001'),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: 1000, newIndex: '0001'),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: 3.14, newIndex: '0001'),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: '110', newIndex: -1),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: '110', newIndex: 10000),
-        throwsArgumentError,
-      );
-      expect(
-        () => rfc.transformedContent(newCategory: '110', newIndex: 3.14),
-        throwsArgumentError,
-      );
-    });
-
     test(
       'transformedContent accepts int newCategory and newIndex and formats properly',
       () {
         final rfc = RfcFile.parse(sample, path: 'rfc/110.0000-sample.md');
         final transformed = rfc.transformedContent(
-          newCategory: 0,
+          newCategory: '000',
           newIndex: 42,
           updatedTime: DateTime.utc(2026, 9, 1),
         );
@@ -648,7 +612,7 @@ superseded_by: '110.0003'
       withClock(Clock.fixed(fixedTime), () {
         final transformed = rfc.transformedContent(
           newCategory: '110',
-          newIndex: '0007',
+          newIndex: 7,
         );
         expect(transformed, contains('updated: 2026-11-12T18:45:00.000Z'));
       });

@@ -339,53 +339,20 @@ class RfcFile {
   /// Preserves all other frontmatter fields (such as `status: draft`, comments, formatting)
   /// and updates the first level-1 heading without corrupting code blocks or body text.
   String transformedContent({
-    required Object newCategory,
-    required Object newIndex,
+    required String newCategory,
+    required int newIndex,
     DateTime? updatedTime,
   }) {
-    final String newCategoryStr;
-    if (newCategory is int) {
-      if (newCategory < 0 || newCategory > 999) {
-        throw ArgumentError(
-          'newCategory must be between 0 and 999, got $newCategory',
-        );
-      }
-      newCategoryStr = newCategory.toAAA();
-    } else if (newCategory is String) {
-      if (!RegExp(r'^\d{3}$').hasMatch(newCategory)) {
-        throw ArgumentError(
-          'newCategory must be a 3-digit string, got "$newCategory"',
-        );
-      }
-      newCategoryStr = newCategory;
-    } else {
+    if (!RegExp(r'^\d{3}$').hasMatch(newCategory)) {
       throw ArgumentError(
-        'newCategory must be an int or a 3-digit String, got ${newCategory.runtimeType}',
+        'newCategory must be a 3-digit string, got "$newCategory"',
       );
     }
 
-    final String newIndexStr;
-    if (newIndex is int) {
-      if (newIndex < 0 || newIndex > 9999) {
-        throw ArgumentError(
-          'newIndex must be between 0 and 9999, got $newIndex',
-        );
-      }
-      newIndexStr = newIndex.toNNNN();
-    } else if (newIndex is String) {
-      if (!RegExp(r'^\d{4}$').hasMatch(newIndex)) {
-        throw ArgumentError(
-          'newIndex must be a 4-digit zero-padded string, got "$newIndex"',
-        );
-      }
-      newIndexStr = newIndex;
-    } else {
-      throw ArgumentError(
-        'newIndex must be an int or a 4-digit String, got ${newIndex.runtimeType}',
-      );
+    if (newIndex < 0 || newIndex > 9999) {
+      throw ArgumentError('newIndex must be between 0 and 9999, got $newIndex');
     }
-
-    final newId = '$newCategoryStr.$newIndexStr';
+    final newId = '$newCategory.${newIndex.toNNNN()}';
     final timestamp = (updatedTime ?? clock.now()).toUtc().toIso8601String();
 
     // Update frontmatter lines
