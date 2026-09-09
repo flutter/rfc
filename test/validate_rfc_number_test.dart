@@ -123,7 +123,7 @@ title: My Branch Feature
           'rfc/110.0003-merged-pr-feature.md',
         },
       );
-      final result = await validator.validate(checkMain: true);
+      final result = await validator.validate(checkBase: true);
 
       expect(result.isValid, isFalse);
       expect(
@@ -161,7 +161,7 @@ arbitrary: content
       );
     });
 
-    test('passes baseBranch to gitList when checkMain is true', () async {
+    test('passes baseBranch to gitList when checkBase is true', () async {
       String? capturedBranch;
 
       await fs.file('rfc/110.0001-feature.md').writeAsString('''---
@@ -179,12 +179,12 @@ title: Feature
         },
       );
 
-      await validator.validate(checkMain: true, baseBranch: 'custom-branch');
+      await validator.validate(checkBase: true, baseBranch: 'custom-branch');
 
       expect(capturedBranch, equals('custom-branch'));
     });
 
-    test('does not invoke gitList when checkMain is false', () async {
+    test('does not invoke gitList when checkBase is false', () async {
       var gitListCalled = false;
       await fs.file('rfc/110.0001-feature.md').writeAsString('''---
 type: rfc
@@ -201,7 +201,7 @@ title: Feature
         },
       );
 
-      final result = await validator.validate(checkMain: false);
+      final result = await validator.validate(checkBase: false);
       expect(result.isValid, isTrue);
       expect(gitListCalled, isFalse);
     });
@@ -228,7 +228,7 @@ title: Jump Ahead
           },
         );
 
-        final result = await validator.validate(checkMain: true);
+        final result = await validator.validate(checkBase: true);
         expect(result.isValid, isFalse);
         expect(
           result.errors.any(
@@ -258,7 +258,7 @@ title: Unallocated Start
             gitList: ({String baseBranch = 'origin/main'}) async => <String>{},
           );
 
-          final result = await validator.validate(checkMain: true);
+          final result = await validator.validate(checkBase: true);
           expect(result.isValid, isFalse);
           expect(
             result.errors.any(
@@ -287,7 +287,7 @@ title: Next Feature
           },
         );
 
-        final result = await validator.validate(checkMain: true);
+        final result = await validator.validate(checkBase: true);
         expect(result.isValid, isTrue);
         expect(result.errors, isEmpty);
       });
@@ -313,7 +313,7 @@ title: Feature D
           },
         );
 
-        final result = await validator.validate(checkMain: true);
+        final result = await validator.validate(checkBase: true);
         expect(result.isValid, isTrue);
         expect(result.errors, isEmpty);
       });
@@ -341,7 +341,7 @@ title: Feature E
             },
           );
 
-          final result = await validator.validate(checkMain: true);
+          final result = await validator.validate(checkBase: true);
           expect(result.isValid, isFalse);
           expect(result.errors, hasLength(1));
           expect(
@@ -372,13 +372,13 @@ title: Feature B Updated
             },
           );
 
-          final result = await validator.validate(checkMain: true);
+          final result = await validator.validate(checkBase: true);
           expect(result.isValid, isTrue);
           expect(result.errors, isEmpty);
         },
       );
 
-      test('rejects internal gap when checkMain is false', () async {
+      test('rejects internal gap when checkBase is false', () async {
         await fs.file('rfc/110.0001-feature-a.md').writeAsString('''---
 type: rfc
 rfc: '110.0001'
@@ -393,7 +393,7 @@ title: Feature C
 ''');
 
         final validator = RfcValidator(fs: fs);
-        final result = await validator.validate(checkMain: false);
+        final result = await validator.validate(checkBase: false);
         expect(result.isValid, isFalse);
         expect(
           result.errors.any(
@@ -407,7 +407,7 @@ title: Feature C
       });
 
       test(
-        'rejects tree starting with index > 0001 when checkMain is false',
+        'rejects tree starting with index > 0001 when checkBase is false',
         () async {
           await fs.file('rfc/110.0005-feature.md').writeAsString('''---
 type: rfc
@@ -417,7 +417,7 @@ title: Feature
 ''');
 
           final validator = RfcValidator(fs: fs);
-          final result = await validator.validate(checkMain: false);
+          final result = await validator.validate(checkBase: false);
           expect(result.isValid, isFalse);
           expect(
             result.errors.any(
@@ -447,7 +447,7 @@ title: Draft
         );
 
         final result = await validator.validate(
-          checkMain: true,
+          checkBase: true,
           noDrafts: false,
         );
         expect(result.isValid, isTrue);

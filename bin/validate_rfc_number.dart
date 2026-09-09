@@ -11,13 +11,7 @@ void main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption(
       'base-branch',
-      defaultsTo: 'origin/main',
-      help: 'Base git branch to check against for collisions.',
-    )
-    ..addFlag(
-      'check-main',
-      negatable: false,
-      help: 'Check for number collisions against the base git branch.',
+      help: 'If provided, validate against the base git branch for collisions',
     )
     ..addFlag(
       'no-drafts',
@@ -54,8 +48,7 @@ void main(List<String> arguments) async {
     return;
   }
 
-  final checkMain = results.flag('check-main');
-  final baseBranch = results.option('base-branch')!;
+  final baseBranch = results.option('base-branch') ?? '';
   final noDrafts = results.flag('no-drafts');
   final githubActions = results.flag('github-actions');
 
@@ -64,7 +57,7 @@ void main(List<String> arguments) async {
 
   final (:isSuccess, :errors) = await validator.validate(
     noDrafts: noDrafts,
-    checkMain: checkMain,
+    checkBase: results.wasParsed('base-branch'),
     baseBranch: baseBranch,
   );
 
@@ -84,4 +77,9 @@ void main(List<String> arguments) async {
   stdout.writeln(
     'RFC numbers validated cleanly. No collisions or illegal drafts found.',
   );
+}
+
+void printHelp(ArgParser parser) {
+  stdout.writeln('RFC Semantic Validator - Flutter RFC Repository Tooling\n');
+  stdout.writeln(parser.usage);
 }

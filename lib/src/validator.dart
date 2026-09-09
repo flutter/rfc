@@ -38,15 +38,11 @@ class ValidationError implements GithubAnnotatable {
   );
 
   @override
-  String toString() {
-    if (line != null) {
-      if (column != null) {
-        return '$filePath:$line:$column: $message';
-      }
-      return '$filePath:$line: $message';
-    }
-    return '$filePath: $message';
-  }
+  String toString() => switch ((line, column)) {
+    (int _, int _) => '$filePath:$line:$column: $message',
+    (int _, null) => '$filePath:$line: $message',
+    _ => '$filePath: $message',
+  };
 }
 
 /// Result of RFC semantic number validation.
@@ -76,27 +72,27 @@ class RfcValidator {
   /// 1. Filename structure matches `AAA.NNNN-<slug>.md`.
   /// 2. Placeholder `.0000` draft status against [noDrafts].
   /// 3. Tree uniqueness (no duplicate assigned RFC numbers across working tree files).
-  /// 4. Collision checks against [baseBranch] when [checkMain] is `true`.
+  /// 4. Collision checks against [baseBranch] when [checkBase] is `true`.
   /// 5. Sequential numbering gap checks: ensures assigned RFC numbers in each
   ///    category are strictly sequential without gaps (e.g., following the
-  ///    latest RFC on [baseBranch] when [checkMain] is `true`, or starting at
-  ///    `0001` and contiguous when [checkMain] is `false`).
+  ///    latest RFC on [baseBranch] when [checkBase] is `true`, or starting at
+  ///    `0001` and contiguous when [checkBase] is `false`).
   ///
   /// Parameters:
   /// - [noDrafts]: If `true`, rejects any RFC files with the `.0000` draft index.
   ///   During drafting and socialization (before a number is assigned), `.0000`
   ///   is allowed. Once an RFC number is assigned, in the merge queue, and on
   ///   the `main` branch, `.0000` is forbidden.
-  /// - [checkMain]: If `true`, queries [gitList] to discover RFCs on [baseBranch]
+  /// - [checkBase]: If `true`, queries [gitList] to discover RFCs on [baseBranch]
   ///   and rejects working tree RFCs whose assigned numbers collide with existing
   ///   files on that branch.
   /// - [baseBranch]: The git branch ref to check against for collisions when
-  ///   [checkMain] is `true` (defaults to `'origin/main'`).
+  ///   [checkBase] is `true` (defaults to `'origin/main'`).
   ///
   /// Returns a [ValidationResult] containing any [ValidationError]s found.
   Future<ValidationResult> validate({
     bool noDrafts = false,
-    bool checkMain = false,
+    bool checkBase = false,
     String baseBranch = 'origin/main',
   }) async {
     final errors = <ValidationError>[];
@@ -134,20 +130,20 @@ class RfcValidator {
       }
     }
 
-    // Discover and index base branch RFCs if --check-main is requested.
+    // Discover and index base branch RFCs if --check-base is requested.
     final baseBranchCategories = <String, _BaseBranchCategory>{
-      if (checkMain) ...await _indexBaseBranchBySubsystem(baseBranch),
+      if (checkBase) ...await _indexBaseBranchBySubsystem(baseBranch),
     };
 
     // For each category AAA:
     //   - verify no duplicates
-    //   - verify no collisions (if checkMain)
+    //   - verify no collisions (if checkBase)
     //   - verify no gaps
     for (final category in [...rfcsByCategory.keys]..sort()) {
       _validateSubsystemCategory(
         category: category,
         rfcs: rfcsByCategory[category]!,
-        checkMain: checkMain,
+        checkBase: checkBase,
         baseBranch: baseBranch,
         baseBranchCategory: baseBranchCategories[category],
         errors: errors,
@@ -191,7 +187,7 @@ class RfcValidator {
 
   /// Validates subsystem category invariants for [category] (`AAA`):
   /// 1. Verify no duplicate assigned numbers within the category.
-  /// 2. If [checkMain] is enabled:
+  /// 2. If [checkBase] is enabled:
   ///    - Verify no collisions with [baseBranch].
   ///    - Verify no gaps following the latest RFC on [baseBranch].
   /// 3. Otherwise:
@@ -199,14 +195,14 @@ class RfcValidator {
   void _validateSubsystemCategory({
     required String category,
     required List<RfcFile> rfcs,
-    required bool checkMain,
+    required bool checkBase,
     required String baseBranch,
     required _BaseBranchCategory? baseBranchCategory,
     required List<ValidationError> errors,
   }) {
     _checkDuplicateNumbers(category: category, rfcs: rfcs, errors: errors);
 
-    if (checkMain) {
+    if (checkBase) {
       _checkBaseBranchCollisions(
         category: category,
         rfcs: rfcs,
@@ -219,8 +215,8 @@ class RfcValidator {
     _checkGaps(
       category: category,
       rfcs: rfcs,
-      baseBranch: checkMain ? baseBranch : null,
-      baseBranchCategory: checkMain ? baseBranchCategory : null,
+      baseBranch: checkBase ? baseBranch : null,
+      baseBranchCategory: checkBase ? baseBranchCategory : null,
       errors: errors,
     );
   }
