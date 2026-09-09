@@ -51,13 +51,6 @@ class RfcFile {
   /// Parsed strongly-typed RFC frontmatter, or null if missing or invalid schema.
   final RfcFrontmatter? frontmatter;
 
-  /// Structural or syntax error message encountered while parsing frontmatter
-  /// (e.g. unclosed delimiter or invalid YAML syntax), if any.
-  ///
-  /// For schema validation errors on frontmatter fields, see [frontmatterErrors]
-  /// and [frontmatterFeedback].
-  final String? frontmatterError;
-
   /// All validation error messages encountered while parsing frontmatter.
   final List<String> frontmatterErrors;
 
@@ -87,7 +80,6 @@ class RfcFile {
     required this.hasFrontmatter,
     required this.frontmatterRaw,
     required this.frontmatter,
-    required this.frontmatterError,
     required this.frontmatterErrors,
     required this.body,
     required this.firstHeading,
@@ -125,10 +117,7 @@ class RfcFile {
 
   /// Whether frontmatter conforms completely to the RFC schema.
   bool get hasValidFrontmatter =>
-      hasFrontmatter &&
-      frontmatterError == null &&
-      frontmatterErrors.isEmpty &&
-      frontmatter != null;
+      hasFrontmatter && frontmatterErrors.isEmpty && frontmatter != null;
 
   /// Whether the document has a valid first level-1 heading.
   bool get hasValidHeading =>
@@ -197,8 +186,9 @@ class RfcFile {
   }
 
   /// Parses and validates YAML frontmatter content.
-  static ({RfcFrontmatter? frontmatter, String? error, List<String> errors})
-  _parseFrontmatter(String frontmatterRaw) {
+  static ({RfcFrontmatter? frontmatter, List<String> errors}) _parseFrontmatter(
+    String frontmatterRaw,
+  ) {
     try {
       final loaded = loadYaml(frontmatterRaw);
       switch (loaded) {
@@ -206,27 +196,26 @@ class RfcFile {
           final loadResult = RfcFrontmatter.tryLoad(map);
           return (
             frontmatter: loadResult.frontmatter,
-            error: null,
             errors: loadResult.errors,
           );
         case null:
           final empty = YamlMap();
-          return (
-            frontmatter: null,
-            error: null,
-            errors: RfcFrontmatter.validate(empty),
-          );
+          return (frontmatter: null, errors: RfcFrontmatter.validate(empty));
         default:
           const err = 'Line 2: YAML frontmatter must be a key-value mapping.';
-          return (frontmatter: null, error: err, errors: [err]);
+          return (frontmatter: null, errors: [err]);
       }
+    } on YamlException catch (e) {
+      final line = (e.span?.start.line ?? 0) + 2;
+      final error =
+          'Line $line: Failed to parse YAML frontmatter: ${e.message}';
+
+      return (frontmatter: null, errors: [error]);
     } catch (e) {
-      final err = switch (e) {
-        YamlException(:final span?, :final message) =>
-          'Line ${span.start.line + 2}: Failed to parse YAML frontmatter: $message',
-        _ => 'Line 2: Failed to parse YAML frontmatter: $e',
-      };
-      return (frontmatter: null, error: err, errors: [err]);
+      return (
+        frontmatter: null,
+        errors: ['Line 2: Failed to parse YAML frontmatter: $e'],
+      );
     }
   }
 
@@ -312,7 +301,6 @@ class RfcFile {
         ? _parseFrontmatter(split.frontmatterRaw)
         : (
             frontmatter: null,
-            error: split.structuralError,
             errors: [if (split.structuralError != null) split.structuralError!],
           );
 
@@ -336,7 +324,6 @@ class RfcFile {
       hasFrontmatter: split.hasFrontmatter,
       frontmatterRaw: split.frontmatterRaw,
       frontmatter: parsedFm.frontmatter,
-      frontmatterError: parsedFm.error,
       frontmatterErrors: List.unmodifiable(parsedFm.errors),
       body: split.body,
       firstHeading: heading.heading,

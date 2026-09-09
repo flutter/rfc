@@ -358,7 +358,7 @@ custom_flags: [alpha, experimental]
       );
       expect(rfc.hasFrontmatter, isTrue);
       expect(rfc.frontmatter?.title, equals('Space Test'));
-      expect(rfc.frontmatterError, isNull);
+      expect(rfc.frontmatterErrors, isEmpty);
     });
 
     group('frontmatter error line numbers', () {
@@ -368,9 +368,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-no-fm.md',
         );
         expect(rfc.hasFrontmatter, isFalse);
-        expect(rfc.frontmatterError, startsWith('Line 1: '));
+        expect(rfc.frontmatterErrors.first, startsWith('Line 1: '));
         expect(
-          rfc.frontmatterError,
+          rfc.frontmatterErrors.first,
           contains(
             'File does not start with YAML frontmatter delimiter `---`.',
           ),
@@ -383,9 +383,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-unclosed.md',
         );
         expect(rfc.hasFrontmatter, isFalse);
-        expect(rfc.frontmatterError, startsWith('Line 1: '));
+        expect(rfc.frontmatterErrors.first, startsWith('Line 1: '));
         expect(
-          rfc.frontmatterError,
+          rfc.frontmatterErrors.first,
           contains('Unclosed YAML frontmatter delimiter'),
         );
       });
@@ -396,9 +396,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-scalar.md',
         );
         expect(rfc.hasFrontmatter, isTrue);
-        expect(rfc.frontmatterError, startsWith('Line 2: '));
+        expect(rfc.frontmatterErrors.first, startsWith('Line 2: '));
         expect(
-          rfc.frontmatterError,
+          rfc.frontmatterErrors.first,
           contains('YAML frontmatter must be a key-value mapping.'),
         );
       });
@@ -413,9 +413,9 @@ custom_flags: [alpha, experimental]
           path: 'rfc/110.0000-bad-yaml.md',
         );
         expect(rfc.hasFrontmatter, isTrue);
-        expect(rfc.frontmatterError, startsWith('Line 3: '));
+        expect(rfc.frontmatterErrors.first, startsWith('Line 3: '));
         expect(
-          rfc.frontmatterError,
+          rfc.frontmatterErrors.first,
           contains('Failed to parse YAML frontmatter:'),
         );
       });
