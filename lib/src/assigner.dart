@@ -160,10 +160,6 @@ class RfcAssigner {
       );
     }
 
-    final newIndexStr = candidate.toNNNN();
-    final newFileName = '$category.$newIndexStr-${targetRfc.slug}.md';
-    final newPath = p.join(p.dirname(targetRfc.path), newFileName);
-
     // Transform content (preserves status: draft, updates rfc & updated, updates header)
     final effectiveUpdatedTime = updatedTime ?? clock.now();
     final newContent = targetRfc.transformedContent(
@@ -171,6 +167,10 @@ class RfcAssigner {
       newIndex: candidate,
       updatedTime: effectiveUpdatedTime,
     );
+
+    final newIndexStr = candidate.toNNNN();
+    final newFileName = '$category.$newIndexStr-${targetRfc.slug}.md';
+    final newPath = p.join(p.dirname(targetRfc.path), newFileName);
 
     // Execute filesystem changes if not dryRun
     if (!dryRun) {
