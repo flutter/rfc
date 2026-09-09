@@ -118,44 +118,23 @@ class RfcLinter {
     }
 
     // 4. YAML Frontmatter Validation
-    if (!rfc.hasFrontmatter) {
-      issues.add(
-        LintIssue(
-          filePath: relativePath,
-          line: 1,
-          message:
-              '${rfc.frontmatterError ?? 'Missing YAML frontmatter block.'}\n\n'
-              'Expected frontmatter format:\n${RfcFrontmatter.expectedSchemaTemplate.trimRight()}',
-        ),
-      );
-      return issues;
-    }
-
-    if (rfc.frontmatterError != null) {
-      issues.add(
-        LintIssue(
-          filePath: relativePath,
-          line: 1,
-          message:
-              '${rfc.frontmatterError!}\n\n'
-              'Expected frontmatter format:\n${RfcFrontmatter.expectedSchemaTemplate.trimRight()}',
-        ),
-      );
-      return issues;
-    }
-
     if (rfc.frontmatterErrors.isNotEmpty) {
-      for (final err in rfc.frontmatterErrors) {
-        issues.add(LintIssue(filePath: relativePath, line: 2, message: err));
+      for (final (:line, :error) in rfc.frontmatterErrors) {
+        issues.add(
+          LintIssue(filePath: relativePath, line: line, message: error),
+        );
       }
       issues.add(
         LintIssue(
           filePath: relativePath,
-          line: 2,
+          line: rfc.hasFrontmatter ? 2 : 1,
           message:
               'Expected frontmatter format:\n${RfcFrontmatter.expectedSchemaTemplate.trimRight()}',
         ),
       );
+      if (!rfc.hasFrontmatter) {
+        return issues;
+      }
     }
 
     final fm = rfc.frontmatter;

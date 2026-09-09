@@ -298,11 +298,88 @@ title: Unclosed
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
-          (i) => i.message.contains('Unclosed YAML frontmatter delimiter'),
+          (i) =>
+              i.line == 1 &&
+              i.message.contains('Unclosed YAML frontmatter delimiter') &&
+              !i.message.contains('(error:'),
+        ),
+        isTrue,
+      );
+      expect(
+        issues.any(
+          (i) =>
+              i.line == 1 && i.message.contains('Expected frontmatter format:'),
         ),
         isTrue,
       );
     });
+
+    test('detects missing frontmatter delimiter', () async {
+      const noFm = '''
+# RFC 110.0000: No Frontmatter
+
+Body content here.
+''';
+      final file = fs.file('rfc/110.0000-sample-feature.md');
+      await file.writeAsString(noFm);
+
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
+      final issues = await linter.lintFile(file);
+      expect(
+        issues.any(
+          (i) =>
+              i.line == 1 &&
+              i.message.contains(
+                'File does not start with YAML frontmatter delimiter `---`.',
+              ) &&
+              !i.message.contains('(error:'),
+        ),
+        isTrue,
+      );
+      expect(
+        issues.any(
+          (i) =>
+              i.line == 1 && i.message.contains('Expected frontmatter format:'),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'reports exact line numbers for frontmatter field schema errors',
+      () async {
+        // Line 1: ---
+        // Line 2: type: rfc
+        // Line 3: rfc: '110.0000'
+        // Line 4: title: Sample Feature
+        // Line 5: description: A great new feature for foundation.
+        // Line 6: status: invalid_status
+        // Line 7: created: 2026-09-01T00:00:00Z
+        // Line 8: updated: 2026-09-01T00:00:00Z
+        // Line 9: tags: [110-foundation]
+        // Line 10: authors: [https://github.com/octocat]
+        // Line 11: ---
+        final doc = validDoc.replaceAll(
+          'status: draft',
+          'status: invalid_status',
+        );
+        final file = fs.file('rfc/110.0000-sample-feature.md');
+        await file.writeAsString(doc);
+
+        final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
+        final issues = await linter.lintFile(file);
+
+        final statusIssue = issues.firstWhere(
+          (i) => i.message.contains('Frontmatter "status" must be one of:'),
+        );
+        expect(statusIssue.line, equals(6));
+
+        final templateIssue = issues.firstWhere(
+          (i) => i.message.contains('Expected frontmatter format:'),
+        );
+        expect(templateIssue.line, equals(2));
+      },
+    );
 
     test('detects invalid non-UTC timestamp', () async {
       final doc = validDoc.replaceAll(
@@ -316,7 +393,9 @@ title: Unclosed
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
-          (i) => i.message.contains('must be an ISO 8601 UTC timestamp'),
+          (i) =>
+              i.line == 7 &&
+              i.message.contains('must be an ISO 8601 UTC timestamp'),
         ),
         isTrue,
       );
