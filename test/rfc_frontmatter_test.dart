@@ -300,7 +300,7 @@ superseded_by: '110.0002'
             'tags': ['000-meta'],
             'authors': ['https://github.com/octocat'],
           };
-          final errors = RfcFrontmatter.validate(yamlIntCreated);
+          final errors = RfcFrontmatter.validate(YamlMap.wrap(yamlIntCreated));
           expect(
             errors.any(
               (e) => e.contains(
@@ -321,7 +321,9 @@ superseded_by: '110.0002'
             'tags': ['000-meta'],
             'authors': ['https://github.com/octocat'],
           };
-          final boolErrors = RfcFrontmatter.validate(yamlBoolCreated);
+          final boolErrors = RfcFrontmatter.validate(
+            YamlMap.wrap(yamlBoolCreated),
+          );
           expect(
             boolErrors.any(
               (e) => e.contains(
@@ -342,7 +344,9 @@ superseded_by: '110.0002'
             'tags': ['000-meta'],
             'authors': ['https://github.com/octocat'],
           };
-          final listErrors = RfcFrontmatter.validate(yamlListUpdated);
+          final listErrors = RfcFrontmatter.validate(
+            YamlMap.wrap(yamlListUpdated),
+          );
           expect(
             listErrors.any(
               (e) => e.contains(
@@ -522,7 +526,7 @@ superseded_by: 'invalid'
           'authors': ['https://github.com/octocat'],
         };
 
-        final fm = RfcFrontmatter.fromYaml(standardMap);
+        final fm = RfcFrontmatter.fromYaml(YamlMap.wrap(standardMap));
         expect(fm.rfc, equals('110.0001'));
         expect(fm.updated, equals(DateTime.utc(2026, 9, 1, 12, 0, 0)));
 
@@ -825,17 +829,19 @@ authors:
         final fixedTime = DateTime.utc(2026, 11, 20, 23, 59, 59);
         final localTime = DateTime(2026, 8, 27, 12, 0);
         withClock(Clock.fixed(fixedTime), () {
-          final errors = RfcFrontmatter.validate({
-            'type': 'rfc',
-            'rfc': '110.0001',
-            'title': 'Title',
-            'description': 'Description',
-            'status': 'draft',
-            'created': DateTime(2026, 8, 27, 12, 0), // Local non-UTC DateTime
-            'updated': '2026-08-27T00:00:00Z',
-            'tags': ['110-foundation'],
-            'authors': ['https://github.com/octocat'],
-          });
+          final errors = RfcFrontmatter.validate(
+            YamlMap.wrap({
+              'type': 'rfc',
+              'rfc': '110.0001',
+              'title': 'Title',
+              'description': 'Description',
+              'status': 'draft',
+              'created': DateTime(2026, 8, 27, 12, 0), // Local non-UTC DateTime
+              'updated': '2026-08-27T00:00:00Z',
+              'tags': ['110-foundation'],
+              'authors': ['https://github.com/octocat'],
+            }),
+          );
           expect(
             errors,
             contains(

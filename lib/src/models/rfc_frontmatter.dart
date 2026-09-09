@@ -45,6 +45,8 @@ typedef RfcFrontmatterLoad = ({
 
 /// Strongly-typed model representing validated YAML frontmatter of an RFC.
 class RfcFrontmatter {
+  static final rfcNumberMatcher = RegExp(r'^\d{3}\.\d{4}$');
+
   /// Document type. Must be `'rfc'`.
   final String type;
 
@@ -138,47 +140,34 @@ authors:
     for (var status in RfcStatus.values) status.value,
   ];
 
-  static int? _lineFor(
-    Map<dynamic, dynamic> yaml,
-    String key, {
-    int lineOffset = 2,
-  }) {
-    if (yaml is YamlMap) {
-      for (final entry in yaml.nodes.entries) {
-        final k = entry.key;
-        if (k is YamlNode && k.value == key) {
-          return k.span.start.line + lineOffset;
-        }
+  static int? _lineFor(YamlMap yaml, String key, {int lineOffset = 2}) {
+    for (final entry in yaml.nodes.entries) {
+      final k = entry.key;
+      if (k is YamlNode && k.value == key) {
+        return k.span.start.line + lineOffset;
       }
-      return 1;
     }
-    return null;
+    return 1;
   }
 
   static int? _lineForListItem(
-    Map<dynamic, dynamic> yaml,
+    YamlMap yaml,
     String key,
     int itemIndex, {
     int lineOffset = 2,
   }) {
-    if (yaml is YamlMap) {
-      final valueNode = yaml.nodes[key];
-      if (valueNode is YamlList && itemIndex < valueNode.nodes.length) {
-        return valueNode.nodes[itemIndex].span.start.line + lineOffset;
-      }
-      return _lineFor(yaml, key, lineOffset: lineOffset);
+    final valueNode = yaml.nodes[key];
+    if (valueNode is YamlList && itemIndex < valueNode.nodes.length) {
+      return valueNode.nodes[itemIndex].span.start.line + lineOffset;
     }
-    return null;
+    return _lineFor(yaml, key, lineOffset: lineOffset);
   }
 
   /// Validates a mapping against the RFC frontmatter schema.
   ///
   /// Returns a list of error messages with actionable feedback, line numbers, and expected formats.
   /// An empty list indicates valid frontmatter.
-  static List<String> validate(
-    Map<dynamic, dynamic> yaml, {
-    int lineOffset = 2,
-  }) {
+  static List<String> validate(YamlMap yaml, {int lineOffset = 2}) {
     final errors = <String>[];
 
     void addError(String key, String message, [int? itemIndex]) {
@@ -210,7 +199,7 @@ authors:
         );
       case final rfcVal:
         final rfcStr = '$rfcVal'.trim();
-        if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(rfcStr)) {
+        if (!rfcNumberMatcher.hasMatch(rfcStr)) {
           addError(
             'rfc',
             'Frontmatter "rfc" must match format "AAA.NNNN" (found "$rfcStr"). '
@@ -397,7 +386,7 @@ authors:
         break;
       case final supersedesVal:
         final sStr = supersedesVal.toString().trim();
-        if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(sStr)) {
+        if (!rfcNumberMatcher.hasMatch(sStr)) {
           addError(
             'supersedes',
             'Frontmatter "supersedes" must match format "AAA.NNNN" (found "$sStr"). '
@@ -412,7 +401,7 @@ authors:
         break;
       case final supersededByVal:
         final sStr = supersededByVal.toString().trim();
-        if (!RegExp(r'^\d{3}\.\d{4}$').hasMatch(sStr)) {
+        if (!rfcNumberMatcher.hasMatch(sStr)) {
           addError(
             'superseded_by',
             'Frontmatter "superseded_by" must match format "AAA.NNNN" (found "$sStr"). '
@@ -427,7 +416,7 @@ authors:
   /// Parses a [Map] into [RfcFrontmatter].
   ///
   /// Throws [FormatException] if validation errors are detected.
-  factory RfcFrontmatter.fromYaml(Map<dynamic, dynamic> yaml) {
+  factory RfcFrontmatter.fromYaml(YamlMap yaml) {
     final errors = validate(yaml);
     if (errors.isNotEmpty) {
       throw FormatException(formatErrors(errors));
@@ -479,7 +468,7 @@ authors:
         formatErrors(['Failed to parse YAML frontmatter: $e']),
       );
     }
-    if (loaded is! Map) {
+    if (loaded is! YamlMap) {
       throw FormatException(
         formatErrors(const ['YAML frontmatter must be a key-value mapping.']),
       );
@@ -491,15 +480,7 @@ authors:
   ///
   /// Returns a RfcFrontmatterLoad record with the parsed [frontmatter]
   /// (or `null`), any [errors], and formatted [feedback] (or `null` if valid).
-  static RfcFrontmatterLoad tryLoad(dynamic yaml) {
-    if (yaml is! Map) {
-      const err = 'YAML frontmatter must be a key-value mapping.';
-      return (
-        frontmatter: null,
-        errors: const [err],
-        feedback: formatErrors([err]),
-      );
-    }
+  static RfcFrontmatterLoad tryLoad(YamlMap yaml) {
     final errors = validate(yaml);
     if (errors.isNotEmpty) {
       return (
