@@ -4,8 +4,6 @@
 
 import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
-
-import 'github_client.dart';
 import 'models/rfc_file.dart';
 import 'taxonomy.dart';
 
@@ -42,22 +40,18 @@ class LintIssue {
 /// Linter enforcing RFC structure, metadata, taxonomy, and number allocation rules.
 class RfcLinter {
   final FileSystem fs;
-  final GitHubClient gh;
   final Taxonomy taxonomy;
   final Set<String> labels;
-  final bool validateGitHubUsers;
-  final Set<String> existingFilesOnMain;
+  final Set<String> existingBasenames;
   final bool enforceDrafts;
 
   RfcLinter({
     required this.fs,
-    required this.gh,
     required this.taxonomy,
     this.labels = const <String>{},
-    this.validateGitHubUsers = false,
-    this.existingFilesOnMain = const <String>{},
     this.enforceDrafts = false,
-  });
+    Set<String> existingFilesOnMain = const <String>{},
+  }) : existingBasenames = {...existingFilesOnMain.map(p.basename)};
 
   /// Lints a single RFC file.
   Future<List<LintIssue>> lintFile(File file) async {
@@ -102,7 +96,6 @@ class RfcLinter {
 
     // 3. Draft vs Assigned Number Enforcement (PR Context)
     if (enforceDrafts) {
-      final existingBasenames = existingFilesOnMain.map(p.basename).toSet();
       final isExistingOnMain = existingBasenames.contains(fileName);
       const bootstrapRfcs = {'000.0001', '000.0002'};
       final isBootstrap = bootstrapRfcs.contains(rfc.rfcId);
@@ -178,24 +171,6 @@ class RfcLinter {
               'Frontmatter "rfc" value ("$rfcId") does not match filename identifier ("$expectedId").',
         ),
       );
-    }
-
-    // GitHub author existence verification (if enabled)
-    if (validateGitHubUsers && fm != null) {
-      for (final author in fm.authors) {
-        if (author is GitHubAuthor) {
-          final exists = await gh.userExists(author.username);
-          if (!exists) {
-            issues.add(
-              LintIssue(
-                filePath: relativePath,
-                line: 2,
-                message: 'GitHub user "${author.username}" does not exist.',
-              ),
-            );
-          }
-        }
-      }
     }
 
     // 5. First Heading Validation

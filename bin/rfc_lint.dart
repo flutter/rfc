@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:file/local.dart';
 import 'package:rfc_tools/src/git_lister.dart';
-import 'package:rfc_tools/src/github_client.dart';
 import 'package:rfc_tools/src/linter.dart';
 import 'package:rfc_tools/src/taxonomy.dart';
 
@@ -23,15 +22,15 @@ void main(List<String> arguments) async {
           'Enforce that RFCs under review must use ".0000" unless labeled with "rfc-ready" or "rfc-assigned".',
     )
     ..addFlag(
-      'validate-github-users',
-      negatable: false,
-      help: 'Verify that GitHub profile authors exist via the GitHub API.',
-    )
-    ..addFlag(
       'github-actions',
       negatable: false,
       help:
           'Output errors in GitHub Actions annotation format (::error file=...::).',
+    )
+    ..addOption(
+      'base-branch',
+      defaultsTo: 'origin/main',
+      help: 'Base branch to list files against',
     )
     ..addFlag(
       'help',
@@ -57,7 +56,6 @@ void main(List<String> arguments) async {
   }
 
   final enforceDrafts = results.flag('enforce-drafts');
-  final validateGitHubUsers = results.flag('validate-github-users');
   final githubActions = results.flag('github-actions');
 
   final labels = <String>{
@@ -66,7 +64,6 @@ void main(List<String> arguments) async {
   };
 
   const fs = LocalFileSystem();
-  const gh = CliGitHubClient();
 
   Taxonomy taxonomy;
   try {
@@ -77,26 +74,24 @@ void main(List<String> arguments) async {
     return;
   }
 
-  final filesOnMain = await defaultGitList(baseBranch: 'origin/main');
+  final filesOnMain = await defaultGitList(
+    baseBranch: results.option('base-branch')!,
+  );
 
   final linter = RfcLinter(
     fs: fs,
-    gh: gh,
     taxonomy: taxonomy,
     labels: labels,
-    validateGitHubUsers: validateGitHubUsers,
     existingFilesOnMain: filesOnMain,
     enforceDrafts: enforceDrafts,
   );
 
-  final issues = <LintIssue>[];
-  if (results.rest.isNotEmpty) {
-    for (final path in results.rest) {
-      issues.addAll(await linter.lintFile(fs.file(path)));
-    }
-  } else {
-    issues.addAll(await linter.lintDirectory(fs.directory('rfc')));
-  }
+  final issues = <LintIssue>[
+    if (results.rest.isNotEmpty)
+      for (final path in results.rest) ...await linter.lintFile(fs.file(path))
+    else
+      ...await linter.lintDirectory(fs.directory('rfc')),
+  ];
 
   if (issues.isNotEmpty) {
     stderr.writeln('RFC Lint failed with ${issues.length} issue(s):\n');

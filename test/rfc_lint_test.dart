@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import 'package:file/memory.dart';
-import 'package:rfc_tools/src/github_client.dart';
 import 'package:rfc_tools/src/linter.dart';
 import 'package:rfc_tools/src/taxonomy.dart';
 import 'package:test/test.dart';
@@ -11,7 +10,6 @@ import 'package:test/test.dart';
 void main() {
   group('RfcLinter', () {
     late MemoryFileSystem fs;
-    late FakeGitHubClient gh;
     late Taxonomy taxonomy;
 
     const validTaxonomy = '''
@@ -44,7 +42,6 @@ Body content here.
 
     setUp(() async {
       fs = MemoryFileSystem();
-      gh = FakeGitHubClient(existingUsers: {'octocat'});
       taxonomy = Taxonomy.fromMarkdown(validTaxonomy);
       await fs.directory('rfc').create(recursive: true);
     });
@@ -55,10 +52,8 @@ Body content here.
 
       final linter = RfcLinter(
         fs: fs,
-        gh: gh,
         taxonomy: taxonomy,
         labels: <String>{}, // PR without any special labels
-        validateGitHubUsers: true,
       );
 
       final issues = await linter.lintFile(file);
@@ -69,7 +64,7 @@ Body content here.
       final file = fs.file('rfc/110.0000-Invalid_Slug.md');
       await file.writeAsString(validDoc);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
 
       final issues = await linter.lintFile(file);
       expect(issues, isNotEmpty);
@@ -83,7 +78,7 @@ Body content here.
       final file = fs.file('rfc/999.0000-sample-feature.md');
       await file.writeAsString(doc);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
 
       final issues = await linter.lintFile(file);
       expect(
@@ -103,7 +98,6 @@ Body content here.
 
         final linter = RfcLinter(
           fs: fs,
-          gh: gh,
           taxonomy: taxonomy,
           labels: <String>{}, // Missing rfc-ready and rfc-assigned
           enforceDrafts: true,
@@ -127,7 +121,6 @@ Body content here.
 
       final linterReady = RfcLinter(
         fs: fs,
-        gh: gh,
         taxonomy: taxonomy,
         labels: {'rfc-ready'},
         enforceDrafts: true,
@@ -136,7 +129,6 @@ Body content here.
 
       final linterAssigned = RfcLinter(
         fs: fs,
-        gh: gh,
         taxonomy: taxonomy,
         labels: {'rfc-assigned'},
         enforceDrafts: true,
@@ -151,34 +143,11 @@ Body content here.
         final file = fs.file('rfc/110.0042-sample-feature.md');
         await file.writeAsString(doc);
 
-        final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+        final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
 
         expect(await linter.lintFile(file), isEmpty);
       },
     );
-
-    test('validates GitHub username existence via fake client', () async {
-      final doc = validDoc.replaceAll('octocat', 'nonexistent-user');
-      final file = fs.file('rfc/110.0000-sample-feature.md');
-      await file.writeAsString(doc);
-
-      final linter = RfcLinter(
-        fs: fs,
-        gh: gh,
-        taxonomy: taxonomy,
-        validateGitHubUsers: true,
-      );
-
-      final issues = await linter.lintFile(file);
-      expect(
-        issues.any(
-          (i) => i.message.contains(
-            'GitHub user "nonexistent-user" does not exist',
-          ),
-        ),
-        isTrue,
-      );
-    });
 
     test('detects missing required frontmatter fields', () async {
       const missingType = '''---
@@ -196,7 +165,7 @@ authors: [https://github.com/octocat]
       final file = fs.file('rfc/110.0000-test.md');
       await file.writeAsString(missingType);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
@@ -227,7 +196,7 @@ tags: [110-foundation]
         final file = fs.file('rfc/110.0000-multiple-errors.md');
         await file.writeAsString(missingAuthorAndUpdated);
 
-        final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+        final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
         final issues = await linter.lintFile(file);
 
         expect(
@@ -270,7 +239,7 @@ authors: [https://github.com/octocat]
       final file = fs.file('rfc/110.0000-test.md');
       await file.writeAsString(headingMismatch);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any((i) => i.message.contains('First heading title')),
@@ -286,7 +255,7 @@ authors: [https://github.com/octocat]
       final file = fs.file('rfc/110.0000-sample-feature.md');
       await file.writeAsString(doc);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
@@ -303,7 +272,7 @@ authors: [https://github.com/octocat]
       final file = fs.file('rfc/110.0000-sample-feature.md');
       await file.writeAsString(doc);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
@@ -325,7 +294,7 @@ title: Unclosed
       final file = fs.file('rfc/110.0000-sample-feature.md');
       await file.writeAsString(unclosed);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
@@ -343,7 +312,7 @@ title: Unclosed
       final file = fs.file('rfc/110.0000-sample-feature.md');
       await file.writeAsString(doc);
 
-      final linter = RfcLinter(fs: fs, gh: gh, taxonomy: taxonomy);
+      final linter = RfcLinter(fs: fs, taxonomy: taxonomy);
       final issues = await linter.lintFile(file);
       expect(
         issues.any(
@@ -362,7 +331,7 @@ title: Unclosed
 
         final linter = RfcLinter(
           fs: fs,
-          gh: gh,
+
           taxonomy: taxonomy,
           labels: <String>{}, // PR with no labels
           existingFilesOnMain: {
