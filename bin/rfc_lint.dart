@@ -1,0 +1,110 @@
+// Copyright 2026 The Flutter Authors.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+import 'dart:io';
+import 'package:args/args.dart';
+import 'package:file/local.dart';
+import 'package:rfc_tools/src/git_lister.dart';
+import 'package:rfc_tools/src/linter.dart';
+import 'package:rfc_tools/src/taxonomy.dart';
+
+void main(List<String> arguments) async {
+  final parser = ArgParser()
+    ..addMultiOption(
+      'labels',
+      help: 'Comma-separated list of GitHub Pull Request labels.',
+    )
+    ..addFlag(
+      'enforce-drafts',
+      negatable: false,
+      help:
+          'Enforce that RFCs under review must use ".0000" unless labeled with "rfc-ready" or "rfc-assigned".',
+    )
+    ..addFlag(
+      'github-actions',
+      negatable: false,
+      help:
+          'Output errors in GitHub Actions annotation format (::error file=...::).',
+    )
+    ..addOption(
+      'base-branch',
+      defaultsTo: 'origin/main',
+      help: 'Base branch to list files against',
+    )
+    ..addFlag(
+      'help',
+      abbr: 'h',
+      negatable: false,
+      help: 'Show usage instructions.',
+    );
+
+  ArgResults results;
+  try {
+    results = parser.parse(arguments);
+  } catch (e) {
+    stderr.writeln('Error parsing arguments: $e\n');
+    stderr.writeln(parser.usage);
+    exitCode = 1;
+    return;
+  }
+
+  if (results.flag('help')) {
+    stdout.writeln('RFC Linter - Flutter RFC Repository Tooling\n');
+    stdout.writeln(parser.usage);
+    return;
+  }
+
+  final enforceDrafts = results.flag('enforce-drafts');
+  final githubActions = results.flag('github-actions');
+
+  final labels = <String>{
+    for (var label in results.multiOption('labels'))
+      if (label.trim() case final trimmed when trimmed.isNotEmpty) trimmed,
+  };
+
+  const fs = LocalFileSystem();
+
+  Taxonomy taxonomy;
+  try {
+    taxonomy = await Taxonomy.load(fs);
+  } catch (e) {
+    stderr.writeln('Failed to load taxonomy: $e');
+    exitCode = 1;
+    return;
+  }
+
+  final filesOnMain = await defaultGitList(
+    baseBranch: results.option('base-branch')!,
+  );
+
+  final linter = RfcLinter(
+    fs: fs,
+    taxonomy: taxonomy,
+    labels: labels,
+    existingFilesOnMain: filesOnMain,
+    enforceDrafts: enforceDrafts,
+  );
+
+  final issues = <LintIssue>[
+    if (results.rest.isNotEmpty)
+      for (final path in results.rest) ...await linter.lintFile(fs.file(path))
+    else
+      ...await linter.lintDirectory(fs.directory('rfc')),
+  ];
+
+  if (issues.isNotEmpty) {
+    stderr.writeln('RFC Lint failed with ${issues.length} issue(s):\n');
+    for (final issue in issues) {
+      if (githubActions) {
+        stderr.writeln(issue.toGithubAnnotation());
+      } else {
+        stderr.writeln('[ERROR] $issue');
+      }
+    }
+    exitCode = 1;
+    return;
+  }
+
+  stdout.writeln('All RFC documents passed lint checks cleanly.');
+}
