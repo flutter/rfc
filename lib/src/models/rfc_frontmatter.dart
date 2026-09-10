@@ -147,12 +147,11 @@ authors:
   ];
 
   static int? _lineFor(YamlMap yaml, String key, {int lineOffset = 2}) {
-    for (final entry in yaml.nodes.entries) {
-      final k = entry.key;
-      if (k is YamlNode && k.value == key) {
-        return k.span.start.line + lineOffset;
-      }
+    final entry = yaml.nodes[key];
+    if (entry != null) {
+      return entry.span.start.line + lineOffset;
     }
+
     return 1;
   }
 
@@ -311,16 +310,16 @@ authors:
         );
       case final List<Object?> list:
         for (var i = 0; i < list.length; i++) {
-          final tag = list[i];
-          if (tag == null || tag.toString().trim().isEmpty) {
-            addError(
-              'tags',
-              'Frontmatter "tags" items must be non-empty strings. Found "$tag". '
-                  'Expected format: a list of non-empty category/topic strings (e.g. 000-meta).',
-              i,
-            );
-            break;
+          final entry = list[i];
+          if (entry is String && entry.trim().isNotEmpty) {
+            continue;
           }
+          addError(
+            'tags',
+            'Frontmatter "tags" items must be non-empty strings. '
+                'Expected format: a list of non-empty category/topic strings (e.g. 000-meta).',
+            i,
+          );
         }
       case final other:
         addError(
@@ -347,6 +346,10 @@ authors:
       case final List<Object?> list:
         for (var i = 0; i < list.length; i++) {
           final authorItem = list[i];
+          if (authorItem is String && authorItem.isNotEmpty) {
+            continue;
+          }
+
           if (authorItem == null) {
             addError(
               'authors',
@@ -356,7 +359,16 @@ authors:
             );
             continue;
           }
-          final authorStr = authorItem.toString().trim();
+          if (authorItem is! String) {
+            addError(
+              'authors',
+              'Author entries must be strings. '
+                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+              i,
+            );
+            continue;
+          }
+          final authorStr = authorItem.trim();
           if (authorStr.isEmpty) {
             addError(
               'authors',

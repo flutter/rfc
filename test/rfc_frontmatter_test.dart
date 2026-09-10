@@ -399,21 +399,32 @@ superseded_by: '110.0002'
           isTrue,
         );
 
-        final yamlEmptyItem =
+        final yamlMultipleBadTags =
             loadYaml(
                   validYaml.replaceAll(
                     'tags:\n  - 110-foundation\n  - 000-meta',
-                    'tags: [""]',
+                    'tags:\n  - invalid_object: value\n  - 110-foundation\n  - ""',
                   ),
                 )
                 as YamlMap;
-        expect(
-          RfcFrontmatter.validate(yamlEmptyItem).any(
-            (e) => e.error.contains(
+        final errors = RfcFrontmatter.validate(yamlMultipleBadTags);
+        final tagErrors = [
+          for (final e in errors)
+            if (e.error.contains(
               'Frontmatter "tags" items must be non-empty strings.',
-            ),
-          ),
-          isTrue,
+            ))
+              e,
+        ];
+        expect(tagErrors, hasLength(2));
+        expect(tagErrors[0].line, equals(10));
+        expect(
+          tagErrors[0].error,
+          contains('Frontmatter "tags" items must be non-empty strings.'),
+        );
+        expect(tagErrors[1].line, equals(12));
+        expect(
+          tagErrors[1].error,
+          contains('Frontmatter "tags" items must be non-empty strings.'),
         );
       });
 
@@ -436,17 +447,22 @@ superseded_by: '110.0002'
         );
 
         final yamlInvalidAuthor =
-            loadYaml(
-                  validYaml.replaceAll(
-                    'https://github.com/octocat',
-                    'not a valid author',
-                  ),
-                )
+            loadYaml(validYaml.replaceAll('https://github.com/octocat', '""'))
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(
             yamlInvalidAuthor,
-          ).any((e) => e.error.contains('Author "not a valid author" must be')),
+          ).any((e) => e.error.contains('Author entries cannot be empty.')),
+          isTrue,
+        );
+
+        final yamlNonStringAuthor =
+            loadYaml(validYaml.replaceAll('https://github.com/octocat', '123'))
+                as YamlMap;
+        expect(
+          RfcFrontmatter.validate(
+            yamlNonStringAuthor,
+          ).any((e) => e.error.contains('Author entries must be strings.')),
           isTrue,
         );
       });
