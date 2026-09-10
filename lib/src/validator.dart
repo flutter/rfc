@@ -262,12 +262,15 @@ class RfcValidator {
 
     for (final entry in rfcIdToFiles.entries) {
       if (entry.value.length > 1) {
+        final basenames = [
+          for (final f in entry.value) p.basename(f),
+        ].join(', ');
         errors.add(
           ValidationError(
             filePath: entry.value.first,
             message:
                 'Duplicate RFC number "${entry.key}" detected across multiple files: '
-                '${entry.value.map(p.basename).join(', ')}.',
+                '$basenames.',
           ),
         );
       }
