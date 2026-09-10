@@ -1,0 +1,13 @@
+# Created by https://www.toptal.com/developers/gitignore/api/dart
+# Edit at https://www.toptal.com/developers/gitignore?templates=dart
+
+### Dart ###
+# Don't commit the following directories created by pub.
+.dart_tool/
+.packages
+build/
+# If you're building an executable, sub-directories will be created in
+# .dart_tool/pub/bin/ that contain the compiled executables. Do not
+# commit these.
+.dart_tool/pub/bin/
+pubspec.lock
