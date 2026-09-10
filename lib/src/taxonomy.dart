@@ -53,11 +53,9 @@ class Taxonomy {
 
   /// Loads the taxonomy from RFC 000.0001 on the given [fs].
   static Future<Taxonomy> load(FileSystem fs) async {
-    File? file;
-
     const defaultPath =
         'rfc/000.0001-flutter-architecture-and-reference-taxonomy.md';
-    file = fs.file(defaultPath);
+    final file = fs.file(defaultPath);
 
     if (!await file.exists()) {
       throw StateError(

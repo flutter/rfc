@@ -4,7 +4,9 @@
 
 import 'dart:io';
 
-import 'github_client.dart' show ProcessRunner;
+/// Signature for running an external process asynchronously.
+typedef ProcessRunner =
+    Future<ProcessResult> Function(String executable, List<String> arguments);
 
 /// Signature for querying RFC files on a remote/base git branch.
 typedef GitListFunction =
@@ -26,7 +28,7 @@ Future<Set<String>> defaultGitList({
       '$rfcDir/',
     ]);
     if (result.exitCode != 0) {
-      stdout.writeln('exit code: ${result.exitCode}');
+      stderr.writeln('exit code: ${result.exitCode}');
       stdout.writeln('git ls-tree stdout:');
       stdout.writeln(result.stdout);
       stderr.writeln('git ls-tree stderr:');
