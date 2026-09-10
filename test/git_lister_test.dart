@@ -27,7 +27,7 @@ void main() {
       expect(runner.calls, hasLength(1));
       expect(
         runner.calls.first.arguments,
-        equals(['ls-tree', '-r', '--name-only', 'origin/main', '--', 'rfc/']),
+        equals(['ls-tree', '-r', '--name-only', 'origin/main', 'rfc/']),
       );
     });
 
