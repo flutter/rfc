@@ -37,7 +37,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           dart run bin/validate_rfc_number.dart \
-            --check-main \
+            --base-branch "origin/main" \
             --github-actions
 
       - name: Validate (Merge Queue & Main Mode)

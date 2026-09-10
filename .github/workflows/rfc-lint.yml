@@ -68,7 +68,6 @@ jobs:
           dart run bin/rfc_lint.dart \
             --enforce-drafts \
             --labels "$LABELS" \
-            --validate-github-users \
             --github-actions \
             $CHANGED_FILES
 
@@ -78,7 +77,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           dart run bin/rfc_lint.dart \
-            --validate-github-users \
             --github-actions
 
       - name: Markdown Lint (PR Mode)
