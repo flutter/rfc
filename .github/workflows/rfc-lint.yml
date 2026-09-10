@@ -4,8 +4,6 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
-    paths:
-      - 'rfc/**'
   merge_group:
     types: [checks_requested]
   push:
@@ -15,6 +13,7 @@ on:
 
 jobs:
   lint-rfcs:
+    name: lint-rfcs
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -81,13 +80,13 @@ jobs:
 
       - name: Markdown Lint (PR Mode)
         if: github.event_name == 'pull_request' && steps.changed-rfcs.outputs.has_changes == 'true'
-        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
+        uses: davidanson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
         with:
           globs: ${{ steps.changed-rfcs.outputs.files }}
 
       - name: Markdown Lint (Full Repository)
         if: github.event_name != 'pull_request'
-        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
+        uses: davidanson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
         with:
           globs: 'rfc/**/*.md'
 

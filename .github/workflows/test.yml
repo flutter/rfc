@@ -2,14 +2,7 @@ name: Dart CI
 
 on:
   pull_request:
-    paths:
-      - 'lib/**'
-      - 'bin/**'
-      - 'test/**'
-      - 'pubspec.yaml'
-      - 'pubspec.lock'
-      - 'analysis_options.yaml'
-      - '.github/workflows/test.yml'
+    branches: [main]
   merge_group:
     types: [checks_requested]
   push:
