@@ -101,7 +101,6 @@ class RfcFile {
       hasFrontmatter: false,
       frontmatterRaw: '',
       frontmatter: null,
-      frontmatterError: null,
       frontmatterErrors: const [],
       body: '',
       firstHeading: null,
