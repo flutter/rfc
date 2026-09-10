@@ -51,7 +51,9 @@ class RfcLinter {
     this.labels = const <String>{},
     this.enforceDrafts = false,
     Set<String> existingFilesOnMain = const <String>{},
-  }) : existingBasenames = {...existingFilesOnMain.map(p.basename)};
+  }) : existingBasenames = {
+         for (final file in existingFilesOnMain) p.basename(file),
+       };
 
   /// Lints a single RFC file.
   Future<List<LintIssue>> lintFile(File file) async {
