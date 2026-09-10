@@ -201,7 +201,7 @@ authors: [https://github.com/octocat]
           fs: fs,
           gitList: ({String baseBranch = 'origin/main'}) async => gitMain,
         );
-        final valResult = await validator.validate(checkMain: true);
+        final valResult = await validator.validate(checkBase: true);
         expect(valResult.isValid, isFalse);
         expect(
           valResult.errors.any(
@@ -248,7 +248,7 @@ authors: [https://github.com/octocat]
         expect(parsed.firstHeadingTitle, equals('State Management Revamp'));
 
         // Post-reassignment validation check: now passes cleanly against main!
-        final postValResult = await validator.validate(checkMain: true);
+        final postValResult = await validator.validate(checkBase: true);
         expect(postValResult.isValid, isTrue);
       },
     );

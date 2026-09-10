@@ -7,10 +7,10 @@ import 'dart:math';
 import 'package:clock/clock.dart';
 import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
+import 'package:rfc_tools/src/process_runner.dart';
 
 import 'git_lister.dart';
 import 'git_lister.dart' as git_lister;
-import 'github_client.dart' show ProcessRunner;
 import 'models/rfc_file.dart';
 
 export 'git_lister.dart' show GitListFunction, defaultGitList;

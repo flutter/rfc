@@ -5,9 +5,7 @@
 import 'dart:convert';
 import 'dart:io' show Process, ProcessResult, stdout, stderr;
 
-/// Signature for running an external process asynchronously.
-typedef ProcessRunner =
-    Future<ProcessResult> Function(String executable, List<String> arguments);
+import 'package:rfc_tools/src/process_runner.dart';
 
 /// Function signature for discovering RFC filenames in the main branch via git.
 typedef GitListFunction = Future<Set<String>> Function({String baseBranch});
