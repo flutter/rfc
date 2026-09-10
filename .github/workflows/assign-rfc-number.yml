@@ -1,0 +1,97 @@
+name: RFC Number Assigner
+
+# Security Note: pull_request_target runs in the context of the base repository (main)
+# with write permissions. To prevent running code from untrusted forks, this
+# workflow implements a strict two-checkout isolation model using separate sibling directories:
+# 1. tools/: Contains trusted tooling from main. dart pub get runs only here.
+# 2. target/: Contains only rfc/ markdown content from the PR branch via sparse checkout.
+# 3. dart run ../tools/bin/assign_rfc_number.dart runs from target/ executing only trusted bytecode.
+# 4. Gated by the maintainer-applied 'assign-rfc-number' label.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] Isolated two-checkout model prevents code execution from untrusted PR
+    types: [labeled]
+
+jobs:
+  assign-number:
+    if: github.event.label.name == 'assign-rfc-number'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      # --- Sandbox 1: Trusted Tooling Setup ---
+      - name: Checkout Trusted Tooling (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tools
+          persist-credentials: false
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+
+      - name: Install Tooling Dependencies
+        working-directory: tools
+        run: dart pub get
+
+      # --- Sandbox 2: Untrusted PR Content Checkout ---
+      - name: Checkout Pull Request Branch (RFC directory only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: target
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          sparse-checkout: |
+            rfc
+          sparse-checkout-cone-mode: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure Git
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch "https://github.com/${{ github.repository }}.git" main:origin/main
+
+      # --- Execution & Delivery ---
+      - name: Assign RFC Number
+        id: assign
+        working-directory: target
+        run: dart run ../tools/bin/assign_rfc_number.dart
+
+      - name: Commit and Push Changes
+        if: success()
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RFC_ID: ${{ steps.assign.outputs.rfc_id }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          git add -A rfc/
+          git commit -m "docs(rfc): assign RFC ${RFC_ID}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:${PR_HEAD_REF}"
+
+      - name: Handle Success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RFC_ID: ${{ steps.assign.outputs.rfc_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label assign-rfc-number || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label rfc-assigned || true
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Assigned RFC ${RFC_ID}." || true
+
+      - name: Handle Failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label assign-rfc-number || true
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Failed to automatically assign RFC number. Check workflow logs for details." || true
