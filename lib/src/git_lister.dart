@@ -9,13 +9,11 @@ typedef ProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> arguments);
 
 /// Signature for querying RFC files on a remote/base git branch.
-typedef GitListFunction =
-    Future<Set<String>> Function({String baseBranch, String rfcDir});
+typedef GitListFunction = Future<Set<String>> Function({String baseBranch});
 
 /// Default implementation querying git via `git ls-tree`.
 Future<Set<String>> defaultGitList({
   String baseBranch = 'origin/main',
-  String rfcDir = 'rfc',
   ProcessRunner processRunner = Process.run,
 }) async {
   try {
@@ -25,7 +23,7 @@ Future<Set<String>> defaultGitList({
       '--name-only',
       baseBranch,
       '--',
-      '$rfcDir/',
+      'rfc/',
     ]);
     if (result.exitCode != 0) {
       stderr.writeln('exit code: ${result.exitCode}');
