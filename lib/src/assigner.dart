@@ -7,8 +7,6 @@ import 'dart:math';
 import 'package:clock/clock.dart';
 import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
-import 'package:rfc_tools/src/process_runner.dart';
-
 import 'git_lister.dart';
 import 'git_lister.dart' as git_lister;
 import 'models/rfc_file.dart';
@@ -277,7 +275,8 @@ class RfcAssigner {
   ) async {
     final mainFiles = await getMainFiles();
     final mainByCategoryIndex = <String, Set<String>>{};
-    for (final mainName in mainFiles.map(p.basename)) {
+    for (final mainFile in mainFiles) {
+      final mainName = p.basename(mainFile);
       final match = RfcFile.filenamePattern.firstMatch(mainName);
       if (match != null) {
         final cat = match.group(1)!;
