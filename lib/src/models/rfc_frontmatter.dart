@@ -46,6 +46,18 @@ typedef RfcFrontmatterLoad = ({
   String? feedback,
 });
 
+/// Exception thrown when RFC frontmatter fails schema validation.
+final class FrontmatterValidationException implements Exception {
+  final List<FrontmatterError> errors;
+  const FrontmatterValidationException(this.errors);
+
+  /// Formatted validation failure message.
+  String get message => RfcFrontmatter.formatErrors(errors);
+
+  @override
+  String toString() => message;
+}
+
 /// Strongly-typed model representing validated YAML frontmatter of an RFC.
 class RfcFrontmatter {
   static final rfcNumberMatcher = RegExp(r'^\d{3}\.\d{4}$');
@@ -422,13 +434,13 @@ authors:
     return errors;
   }
 
-  /// Parses a [Map] into [RfcFrontmatter].
+  /// Parses a [YamlMap] into [RfcFrontmatter].
   ///
-  /// Throws [FormatException] if validation errors are detected.
+  /// Throws [FrontmatterValidationException] if validation errors are detected.
   factory RfcFrontmatter.fromYaml(YamlMap yaml) {
     final errors = validate(yaml);
     if (errors.isNotEmpty) {
-      throw FormatException(formatErrors(errors));
+      throw FrontmatterValidationException(errors);
     }
 
     final type = '${yaml['type']}'.trim();
@@ -466,55 +478,22 @@ authors:
     );
   }
 
-  /// Parses a raw YAML frontmatter string into [RfcFrontmatter].
-  ///
-  /// Throws [FormatException] if the string cannot be parsed as a YAML mapping
-  /// or fails schema validation.
-  factory RfcFrontmatter.parse(String yamlString) {
-    dynamic loaded;
-    try {
-      loaded = loadYaml(yamlString);
-    } catch (e) {
-      throw FormatException(
-        formatErrors([
-          (line: 1, error: 'Failed to parse YAML frontmatter: $e'),
-        ]),
-      );
-    }
-    if (loaded is! YamlMap) {
-      throw FormatException(
-        formatErrors(const [
-          (line: 1, error: 'YAML frontmatter must be a key-value mapping.'),
-        ]),
-      );
-    }
-    return RfcFrontmatter.fromYaml(loaded);
-  }
-
   /// Safely attempts to parse a [Map] or [YamlMap] into [RfcFrontmatter].
   ///
   /// Returns a RfcFrontmatterLoad record with the parsed [frontmatter]
   /// (or `null`), any [errors], and formatted [feedback] (or `null` if valid).
   static RfcFrontmatterLoad tryLoad(YamlMap yaml) {
-    final errors = validate(yaml);
-    if (errors.isNotEmpty) {
-      return (
-        frontmatter: null,
-        errors: errors,
-        feedback: formatErrors(errors),
-      );
-    }
     try {
       return (
         frontmatter: RfcFrontmatter.fromYaml(yaml),
         errors: const <FrontmatterError>[],
         feedback: null,
       );
-    } on FormatException catch (e) {
+    } on FrontmatterValidationException catch (e) {
       return (
         frontmatter: null,
-        errors: [(line: 1, error: e.message)],
-        feedback: e.message,
+        errors: e.errors,
+        feedback: formatErrors(e.errors),
       );
     }
   }

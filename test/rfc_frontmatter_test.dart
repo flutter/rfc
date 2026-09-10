@@ -9,6 +9,11 @@ import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 void main() {
+  RfcFrontmatter parseYaml(String yamlFrontmatter) {
+    final yaml = loadYaml(yamlFrontmatter) as YamlMap;
+    return RfcFrontmatter.fromYaml(yaml);
+  }
+
   group('RfcFrontmatter', () {
     const validYaml = '''
 type: rfc
@@ -32,7 +37,7 @@ superseded_by: '110.0002'
 ''';
 
     test('parses completely valid frontmatter into typed fields', () {
-      final fm = RfcFrontmatter.parse(validYaml);
+      final fm = parseYaml(validYaml);
 
       expect(fm.type, equals('rfc'));
       expect(fm.rfc, equals('110.0001'));
@@ -60,18 +65,18 @@ superseded_by: '110.0002'
     });
 
     test('parses optional supersedes and superseded_by fields', () {
-      final fm = RfcFrontmatter.parse(withSupersedes);
+      final fm = parseYaml(withSupersedes);
       expect(fm.supersedes, equals('110.0000'));
       expect(fm.supersededBy, equals('110.0002'));
     });
 
     test('supports value equality and hashCode', () {
-      final fm1 = RfcFrontmatter.parse(validYaml);
-      final fm2 = RfcFrontmatter.parse(validYaml);
+      final fm1 = parseYaml(validYaml);
+      final fm2 = parseYaml(validYaml);
       expect(fm1, equals(fm2));
       expect(fm1.hashCode, equals(fm2.hashCode));
 
-      final fmDifferent = RfcFrontmatter.parse(
+      final fmDifferent = parseYaml(
         validYaml.replaceAll('110.0001', '110.0002'),
       );
       expect(fm1, isNot(equals(fmDifferent)));
@@ -508,47 +513,16 @@ superseded_by: 'invalid'
         );
       });
 
-      test('fromYaml throws FormatException on invalid YAML', () {
-        final invalidYaml = loadYaml('type: invalid') as YamlMap;
-        expect(
-          () => RfcFrontmatter.fromYaml(invalidYaml),
-          throwsA(isA<FormatException>()),
-        );
-      });
-
-      test('parse throws FormatException on non-mapping input', () {
-        expect(
-          () => RfcFrontmatter.parse('just a scalar string'),
-          throwsA(
-            isA<FormatException>().having(
-              (e) => e.message,
-              'message',
-              allOf(
-                contains('YAML frontmatter must be a key-value mapping.'),
-                contains('Expected frontmatter format:'),
-                contains(RfcFrontmatter.expectedSchemaTemplate.trimRight()),
-              ),
-            ),
-          ),
-        );
-      });
-
-      test('parse throws FormatException on malformed YAML syntax', () {
-        expect(
-          () => RfcFrontmatter.parse('key: [unclosed list'),
-          throwsA(
-            isA<FormatException>().having(
-              (e) => e.message,
-              'message',
-              allOf(
-                contains('Failed to parse YAML frontmatter:'),
-                contains('Expected frontmatter format:'),
-                contains(RfcFrontmatter.expectedSchemaTemplate.trimRight()),
-              ),
-            ),
-          ),
-        );
-      });
+      test(
+        'fromYaml throws FrontmatterValidationException on invalid YAML',
+        () {
+          final invalidYaml = loadYaml('type: invalid') as YamlMap;
+          expect(
+            () => RfcFrontmatter.fromYaml(invalidYaml),
+            throwsA(isA<FrontmatterValidationException>()),
+          );
+        },
+      );
 
       test('validates and parses standard Dart Map input', () {
         final standardMap = <String, dynamic>{
@@ -685,7 +659,7 @@ tags:
       });
 
       test(
-        'fromYaml throws FormatException containing all errors and expected schema template',
+        'fromYaml throws FrontmatterValidationException containing all errors and expected schema template',
         () {
           final yamlMissingBoth =
               loadYaml('''
@@ -703,7 +677,7 @@ tags:
           expect(
             () => RfcFrontmatter.fromYaml(yamlMissingBoth),
             throwsA(
-              isA<FormatException>().having(
+              isA<FrontmatterValidationException>().having(
                 (e) => e.message,
                 'message',
                 allOf(
@@ -757,9 +731,7 @@ tags:
           );
           expect(RfcFrontmatter.expectedSchemaTemplate, contains('authors:'));
 
-          final parsed = RfcFrontmatter.parse(
-            RfcFrontmatter.expectedSchemaTemplate,
-          );
+          final parsed = parseYaml(RfcFrontmatter.expectedSchemaTemplate);
           expect(parsed.type, equals('rfc'));
           expect(parsed.rfc, equals('000.0001'));
           expect(parsed.status, equals(RfcStatus.draft));
