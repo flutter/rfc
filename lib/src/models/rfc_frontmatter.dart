@@ -269,7 +269,7 @@ authors:
               'Expected format: status: draft.',
         );
       case final statusVal:
-        final statusStr = statusVal.toString().trim();
+        final statusStr = '$statusVal'.trim();
         final parsedStatus = RfcStatus.tryParse(statusStr);
         if (parsedStatus == null) {
           addError(
@@ -345,48 +345,40 @@ authors:
         );
       case final List<Object?> list:
         for (var i = 0; i < list.length; i++) {
-          final authorItem = list[i];
-          if (authorItem is String && authorItem.isNotEmpty) {
-            continue;
-          }
-
-          if (authorItem == null) {
-            addError(
-              'authors',
-              'Author entries cannot be null. '
-                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
-              i,
-            );
-            continue;
-          }
-          if (authorItem is! String) {
-            addError(
-              'authors',
-              'Author entries must be strings. '
-                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
-              i,
-            );
-            continue;
-          }
-          final authorStr = authorItem.trim();
-          if (authorStr.isEmpty) {
-            addError(
-              'authors',
-              'Author entries cannot be empty. '
-                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
-              i,
-            );
-            continue;
-          }
-          final parsedAuthor = RfcAuthor.tryParse(authorStr);
-          if (parsedAuthor == null) {
-            addError(
-              'authors',
-              'Author "$authorStr" must be a GitHub profile URL ("https://github.com/<username>") '
-                  'or RFC 5322 mailbox (\'"Display Name" <user@example.com>\'). '
-                  'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
-              i,
-            );
+          switch (list[i]) {
+            case null:
+              addError(
+                'authors',
+                'Author entries cannot be null. '
+                    'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                i,
+              );
+            case final String s when s.trim().isEmpty:
+              addError(
+                'authors',
+                'Author entries cannot be empty. '
+                    'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                i,
+              );
+            case final String s:
+              final authorStr = s.trim();
+              final parsedAuthor = RfcAuthor.tryParse(authorStr);
+              if (parsedAuthor == null) {
+                addError(
+                  'authors',
+                  'Author "$authorStr" must be a GitHub profile URL ("https://github.com/<username>") '
+                      'or RFC 5322 mailbox (\'"Display Name" <user@example.com>\'). '
+                      'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                  i,
+                );
+              }
+            case _:
+              addError(
+                'authors',
+                'Author entries must be strings. '
+                    'Expected format: "https://github.com/<username>" or \'"Display Name" <user@example.com>\'.',
+                i,
+              );
           }
         }
       case final other:
@@ -402,7 +394,7 @@ authors:
       case null:
         break;
       case final supersedesVal:
-        final sStr = supersedesVal.toString().trim();
+        final sStr = '$supersedesVal'.trim();
         if (!rfcNumberMatcher.hasMatch(sStr)) {
           addError(
             'supersedes',
@@ -417,7 +409,7 @@ authors:
       case null:
         break;
       case final supersededByVal:
-        final sStr = supersededByVal.toString().trim();
+        final sStr = '$supersededByVal'.trim();
         if (!rfcNumberMatcher.hasMatch(sStr)) {
           addError(
             'superseded_by',
@@ -439,23 +431,25 @@ authors:
       throw FormatException(formatErrors(errors));
     }
 
-    final type = yaml['type'].toString().trim();
-    final rfc = yaml['rfc'].toString().trim();
-    final title = yaml['title'].toString().trim();
-    final description = yaml['description'].toString().trim();
-    final status = RfcStatus.tryParse(yaml['status'].toString().trim())!;
+    final type = '${yaml['type']}'.trim();
+    final rfc = '${yaml['rfc']}'.trim();
+    final title = '${yaml['title']}'.trim();
+    final description = '${yaml['description']}'.trim();
+    final status = RfcStatus.tryParse('${yaml['status']}'.trim())!;
     final created = _parseUtcTimestamp(yaml['created'], 'created').dateTime!;
     final updated = _parseUtcTimestamp(yaml['updated'], 'updated').dateTime!;
-    final tags = List<String>.unmodifiable(
-      (yaml['tags'] as List).map((e) => e.toString().trim()),
-    );
-    final authors = List<RfcAuthor>.unmodifiable(
-      (yaml['authors'] as List).map(
-        (e) => RfcAuthor.parse(e.toString().trim()),
-      ),
-    );
-    final supersedes = yaml['supersedes']?.toString().trim();
-    final supersededBy = yaml['superseded_by']?.toString().trim();
+    final tags = List<String>.unmodifiable([
+      for (final e in yaml['tags'] as List) '$e'.trim(),
+    ]);
+    final authors = List<RfcAuthor>.unmodifiable([
+      for (final e in yaml['authors'] as List) RfcAuthor.parse('$e'.trim()),
+    ]);
+    final supersedes = yaml['supersedes'] == null
+        ? null
+        : '${yaml['supersedes']}'.trim();
+    final supersededBy = yaml['superseded_by'] == null
+        ? null
+        : '${yaml['superseded_by']}'.trim();
 
     return RfcFrontmatter(
       type: type,

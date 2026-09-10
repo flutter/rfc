@@ -208,12 +208,13 @@ void main() {
           RfcAuthor.parse('"John McDole" <codefu@google.com>'),
         ];
 
-        final descriptions = authors.map((author) {
-          return switch (author) {
-            GitHubAuthor(:final username) => 'github:$username',
-            EmailAuthor(:final name, :final email) => 'email:$name<$email>',
-          };
-        }).toList();
+        final descriptions = [
+          for (final author in authors)
+            switch (author) {
+              GitHubAuthor(:final username) => 'github:$username',
+              EmailAuthor(:final name, :final email) => 'email:$name<$email>',
+            },
+        ];
 
         expect(
           descriptions,

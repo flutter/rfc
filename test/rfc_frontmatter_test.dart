@@ -447,11 +447,26 @@ superseded_by: '110.0002'
         );
 
         final yamlInvalidAuthor =
-            loadYaml(validYaml.replaceAll('https://github.com/octocat', '""'))
+            loadYaml(
+                  validYaml.replaceAll(
+                    'https://github.com/octocat',
+                    'not a valid author',
+                  ),
+                )
                 as YamlMap;
         expect(
           RfcFrontmatter.validate(
             yamlInvalidAuthor,
+          ).any((e) => e.error.contains('Author "not a valid author" must be')),
+          isTrue,
+        );
+
+        final yamlEmptyAuthor =
+            loadYaml(validYaml.replaceAll('https://github.com/octocat', '""'))
+                as YamlMap;
+        expect(
+          RfcFrontmatter.validate(
+            yamlEmptyAuthor,
           ).any((e) => e.error.contains('Author entries cannot be empty.')),
           isTrue,
         );

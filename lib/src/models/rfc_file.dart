@@ -275,11 +275,10 @@ class RfcFile {
 
   /// Converts a kebab-case slug into Title Case (e.g. `extract-value-notifier` -> `Extract Value Notifier`).
   static String _slugToTitle(String slug) {
-    return slug
-        .split('-')
-        .where((w) => w.isNotEmpty)
-        .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
-        .join(' ');
+    return [
+      for (final w in slug.split('-'))
+        if (w.isNotEmpty) '${w[0].toUpperCase()}${w.substring(1)}',
+    ].join(' ');
   }
 
   /// Parses an RFC markdown file content.

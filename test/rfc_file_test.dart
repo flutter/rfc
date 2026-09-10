@@ -74,10 +74,9 @@ Some markdown text.
       );
       expect(rfc.frontmatter!.status, equals(RfcStatus.draft));
       expect(rfc.frontmatter!.tags, equals(['110-foundation']));
-      expect(
-        rfc.frontmatter!.authors.map((a) => a.raw).toList(),
-        equals(['https://github.com/octocat']),
-      );
+      expect([
+        for (final a in rfc.frontmatter!.authors) a.raw,
+      ], equals(['https://github.com/octocat']));
 
       expect(rfc.firstHeadingId, equals('110.0000'));
       expect(rfc.firstHeadingTitle, equals('Extract Value Notifier'));
