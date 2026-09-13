@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 import 'dart:convert';
-import 'dart:io' show Process, ProcessResult, stdout, stderr;
+import 'dart:io' show Process, ProcessException, ProcessResult;
 
-/// Signature for running an external process asynchronously.
-typedef ProcessRunner =
-    Future<ProcessResult> Function(String executable, List<String> arguments);
+import 'process_logger.dart';
+import 'process_runner.dart';
 
 /// Function signature for discovering RFC filenames in the main branch via git.
 typedef GitListFunction = Future<Set<String>> Function({String baseBranch});
@@ -21,52 +20,55 @@ Set<String> parseLsTreeOutput(dynamic stdout) {
   };
 }
 
-void _logGitError(ProcessResult result) {
-  stderr.writeln('exit code: ${result.exitCode}');
-  stdout.writeln('git ls-tree stdout:');
-  stdout.writeln(result.stdout);
-  stderr.writeln('git ls-tree stderr:');
-  stderr.writeln(result.stderr);
-}
-
 /// Discovers RFC filenames in main branch via git.
 Future<Set<String>> defaultGitList({
   String baseBranch = 'origin/main',
   ProcessRunner processRunner = Process.run,
+  bool throwOnError = false,
 }) async {
-  try {
-    final result = await processRunner('git', [
-      'ls-tree',
-      '-r',
-      '--name-only',
-      baseBranch,
-      'rfc/',
-    ]);
-    if (result.exitCode == 0) {
-      return parseLsTreeOutput(result.stdout);
-    }
+  final trimmedBranch = baseBranch.trim();
+  final cleanBranch = trimmedBranch.replaceFirst(
+    RegExp(r'^(?:remotes\/)?(?:origin|upstream)\/'),
+    '',
+  );
+  final branchesToTry = [
+    trimmedBranch,
+    if (cleanBranch != trimmedBranch) cleanBranch,
+  ];
 
-    final cleanBranch = baseBranch.replaceFirst(
-      RegExp(r'^(?:remotes\/)?(?:origin|upstream)\/'),
-      '',
-    );
-    if (cleanBranch != baseBranch) {
-      final locResult = await processRunner('git', [
+  ProcessResult? lastResult;
+  String? lastBranch;
+  for (final branch in branchesToTry) {
+    lastBranch = branch;
+    try {
+      final result = await processRunner('git', [
         'ls-tree',
         '-r',
         '--name-only',
-        cleanBranch,
+        branch,
         'rfc/',
       ]);
-      if (locResult.exitCode == 0) {
-        return parseLsTreeOutput(locResult.stdout);
+      if (result.exitCode == 0) {
+        return parseLsTreeOutput(result.stdout);
       }
-      _logGitError(locResult);
-    } else {
-      _logGitError(result);
+      lastResult = result;
+      logProcessResult(result, command: 'git ls-tree');
+    } catch (e) {
+      logProcessError(e, command: 'git ls-tree');
+      if (throwOnError) rethrow;
     }
-  } catch (e) {
-    stderr.writeln('git ls-tree exception: $e');
+  }
+
+  if (throwOnError && lastResult != null) {
+    final err = '${lastResult.stderr}'.trim();
+    throw ProcessException(
+      'git',
+      ['ls-tree', '-r', '--name-only', lastBranch ?? trimmedBranch, 'rfc/'],
+      err.isNotEmpty
+          ? err
+          : 'git ls-tree failed with exit code ${lastResult.exitCode}',
+      lastResult.exitCode,
+    );
   }
   return <String>{};
 }

@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'git_lister.dart';
 import 'git_lister.dart' as git_lister;
 import 'models/rfc_file.dart';
+import 'process_runner.dart';
 
 export 'git_lister.dart' show GitListFunction, defaultGitList;
 

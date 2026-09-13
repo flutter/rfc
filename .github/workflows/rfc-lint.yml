@@ -23,7 +23,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Dart
@@ -38,14 +38,17 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          BASE_TARGET="origin/${BASE_REF:-main}"
-          if ! git rev-parse --verify "$BASE_TARGET" >/dev/null 2>&1; then
-            BASE_TARGET="main"
+          TARGET_REF="${BASE_REF:-main}"
+          TARGET_REF="${TARGET_REF#origin/}"
+          if git rev-parse --verify "origin/$TARGET_REF" >/dev/null 2>&1; then
+            BASE_TARGET="origin/$TARGET_REF"
+          elif git rev-parse --verify "$TARGET_REF" >/dev/null 2>&1; then
+            BASE_TARGET="$TARGET_REF"
+          else
+            echo "::error::Cannot resolve base branch ref 'origin/$TARGET_REF' or '$TARGET_REF'."
+            exit 1
           fi
-          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET"...HEAD -- 'rfc/*.md' 2>/dev/null || true)
-          if [ -z "$FILES" ]; then
-            FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET" -- 'rfc/*.md' 2>/dev/null || true)
-          fi
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET"...HEAD -- 'rfc/*.md')
           if [ -n "$FILES" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             {
