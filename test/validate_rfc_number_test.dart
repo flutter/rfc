@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:io' show ProcessException;
+
 import 'package:file/memory.dart';
 import 'package:rfc_tools/src/validator.dart';
 import 'package:test/test.dart';
+
+import 'mock_process_runner.dart';
 
 void main() {
   group('RfcValidator', () {
@@ -206,10 +210,28 @@ title: Feature
       expect(gitListCalled, isFalse);
     });
 
-    test('default constructor uses defaultGitList', () {
+    test('default constructor uses RfcValidator.defaultGitList', () {
       final validator = RfcValidator(fs: fs);
-      expect(validator.gitList, equals(defaultGitList));
+      expect(validator.gitList, equals(RfcValidator.defaultGitList));
     });
+
+    test(
+      'RfcValidator.defaultGitList throws ProcessException on non-zero exit code',
+      () async {
+        final runner = MockProcessRunner(
+          exitCode: 128,
+          stderr: 'fatal: not a valid object name',
+        );
+
+        expect(
+          () => RfcValidator.defaultGitList(
+            baseBranch: 'origin/main',
+            processRunner: runner.run,
+          ),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
 
     group('sequential numbering gap checks', () {
       test('rejects gap when new RFC jumps ahead of baseBranch', () async {
@@ -452,6 +474,34 @@ title: Draft
         );
         expect(result.isValid, isTrue);
         expect(result.errors, isEmpty);
+      });
+
+      test('fails with error when gitList throws', () async {
+        await fs.file('rfc/110.0001-feature.md').writeAsString('''---
+type: rfc
+rfc: '110.0001'
+title: Feature
+---
+''');
+
+        final validator = RfcValidator(
+          fs: fs,
+          gitList: ({String baseBranch = 'origin/main'}) async =>
+              throw ProcessException(
+                'git',
+                ['ls-tree'],
+                'fatal: not a valid object name',
+                128,
+              ),
+        );
+
+        final result = await validator.validate(checkBase: true);
+        expect(result.isValid, isFalse);
+        expect(result.errors, hasLength(1));
+        expect(
+          result.errors.first.message,
+          contains('Failed to discover RFCs on base branch'),
+        );
       });
     });
 
