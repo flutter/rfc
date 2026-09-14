@@ -1,0 +1,14 @@
+# Code owners for the flutter/rfc repository.
+#
+# Git LFS enforcement is defined by `.gitattributes` and executed by the
+# workflows below. Because `git lfs fsck` evaluates `.gitattributes` at the
+# revision being checked, a pull request that edits `.gitattributes` can
+# disable the very rule that would have blocked it. These paths therefore
+# require an explicit owner review.
+#
+# NOTE: CODEOWNERS is only enforced when branch protection on `main` has
+# "Require review from Code Owners" enabled.
+
+/.gitattributes        @flutter/owners @flutter/flutter-engprod
+/.github/CODEOWNERS    @flutter/owners @flutter/flutter-engprod
+/.github/workflows/    @flutter/owners @flutter/flutter-engprod
