@@ -1,0 +1,68 @@
+# Source and documentation files
+*.dart text eol=lf diff=dart
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.svg text eol=lf
+
+# -----------------------------------------------------------------------------
+# Git LFS Tracking for Media Files
+# Bracketed case patterns (e.g. *.[pP][nN][gG]) ensure case-insensitive matching
+# across Linux, macOS, and Windows environments.
+# -----------------------------------------------------------------------------
+
+# Image formats
+*.[pP][nN][gG] filter=lfs diff=lfs merge=lfs -text
+*.[jJ][pP][gG] filter=lfs diff=lfs merge=lfs -text
+*.[jJ][pP][eE][gG] filter=lfs diff=lfs merge=lfs -text
+*.[gG][iI][fF] filter=lfs diff=lfs merge=lfs -text
+*.[wW][eE][bB][pP] filter=lfs diff=lfs merge=lfs -text
+*.[aA][vV][iI][fF] filter=lfs diff=lfs merge=lfs -text
+*.[iI][cC][oO] filter=lfs diff=lfs merge=lfs -text
+*.[bB][mM][pP] filter=lfs diff=lfs merge=lfs -text
+*.[tT][iI][fF][fF] filter=lfs diff=lfs merge=lfs -text
+*.[tT][iI][fF] filter=lfs diff=lfs merge=lfs -text
+*.[hH][eE][iI][cC] filter=lfs diff=lfs merge=lfs -text
+*.[hH][eE][iI][fF] filter=lfs diff=lfs merge=lfs -text
+*.[aA][pP][nN][gG] filter=lfs diff=lfs merge=lfs -text
+
+# Video formats
+*.[mM][pP]4 filter=lfs diff=lfs merge=lfs -text
+*.[wW][eE][bB][mM] filter=lfs diff=lfs merge=lfs -text
+*.[mM][oO][vV] filter=lfs diff=lfs merge=lfs -text
+*.[aA][vV][iI] filter=lfs diff=lfs merge=lfs -text
+*.[mM][kK][vV] filter=lfs diff=lfs merge=lfs -text
+*.[mM]4[vV] filter=lfs diff=lfs merge=lfs -text
+
+# Audio formats
+*.[mM][pP]3 filter=lfs diff=lfs merge=lfs -text
+*.[wW][aA][vV] filter=lfs diff=lfs merge=lfs -text
+*.[oO][gG][gG] filter=lfs diff=lfs merge=lfs -text
+*.[mM]4[aA] filter=lfs diff=lfs merge=lfs -text
+*.[aA][aA][cC] filter=lfs diff=lfs merge=lfs -text
+*.[fF][lL][aA][cC] filter=lfs diff=lfs merge=lfs -text
+
+# Document formats
+*.[pP][dD][fF] filter=lfs diff=lfs merge=lfs -text
+
+# Font formats
+*.[tT][tT][fF] filter=lfs diff=lfs merge=lfs -text
+*.[oO][tT][fF] filter=lfs diff=lfs merge=lfs -text
+*.[wW][oO][fF][fF] filter=lfs diff=lfs merge=lfs -text
+*.[wW][oO][fF][fF]2 filter=lfs diff=lfs merge=lfs -text
+
+# Archive formats
+*.[zZ][iI][pP] filter=lfs diff=lfs merge=lfs -text
+*.[tT][aA][rR] filter=lfs diff=lfs merge=lfs -text
+*.[tT][gG][zZ] filter=lfs diff=lfs merge=lfs -text
+*.[gG][zZ] filter=lfs diff=lfs merge=lfs -text
+
+# Binary artifacts
+*.[jJ][aA][rR] filter=lfs diff=lfs merge=lfs -text
+*.[wW][aA][sS][mM] filter=lfs diff=lfs merge=lfs -text
+*.[aA][pP][kK] filter=lfs diff=lfs merge=lfs -text
+
+# Design source files
+*.[pP][sS][dD] filter=lfs diff=lfs merge=lfs -text
+*.[sS][kK][eE][tT][cC][hH] filter=lfs diff=lfs merge=lfs -text
