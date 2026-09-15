@@ -10,6 +10,7 @@ Tracking issue: flutter/flutter#00000
 - [ ] I signed the [CLA].
 - [ ] I have linked an issue from flutter/flutter with the label `design doc`.
 - [ ] All existing and new tests are passing.
+- [ ] I have enabled "Allow edits from maintainers" on this PR so the bot can automatically assign an RFC number (or I will run `dart run bin/assign_rfc_number.dart` locally when instructed).
 
 If you need help, consider asking for advice on the #hackers channel on [Discord].
 
