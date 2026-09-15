@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:io' show ProcessException;
+
 import 'package:rfc_tools/src/git_lister.dart';
 import 'package:test/test.dart';
 
@@ -31,31 +33,76 @@ void main() {
       );
     });
 
-    test('returns empty set on non-zero exit code', () async {
-      final runner = MockProcessRunner(
-        exitCode: 128,
-        stderr: 'fatal: not a valid object name',
-      );
+    test(
+      'returns empty set on non-zero exit code when throwOnError is false',
+      () async {
+        final runner = MockProcessRunner(
+          exitCode: 128,
+          stderr: 'fatal: not a valid object name',
+        );
 
-      final files = await defaultGitList(
-        baseBranch: 'origin/main',
-        processRunner: runner.run,
-      );
+        final files = await defaultGitList(
+          baseBranch: 'origin/main',
+          processRunner: runner.run,
+          throwOnError: false,
+        );
 
-      expect(files, isEmpty);
-    });
+        expect(files, isEmpty);
+      },
+    );
 
-    test('returns empty set when process throws', () async {
-      final runner = MockProcessRunner(
-        exceptionToThrow: Exception('process failed'),
-      );
+    test(
+      'throws ProcessException on non-zero exit code when throwOnError is true',
+      () async {
+        final runner = MockProcessRunner(
+          exitCode: 128,
+          stderr: 'fatal: not a valid object name',
+        );
 
-      final files = await defaultGitList(
-        baseBranch: 'origin/main',
-        processRunner: runner.run,
-      );
+        expect(
+          () => defaultGitList(
+            baseBranch: 'origin/main',
+            processRunner: runner.run,
+            throwOnError: true,
+          ),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
 
-      expect(files, isEmpty);
-    });
+    test(
+      'returns empty set when processRunner throws and throwOnError is false',
+      () async {
+        final runner = MockProcessRunner(
+          exceptionToThrow: Exception('process failed'),
+        );
+
+        final files = await defaultGitList(
+          baseBranch: 'origin/main',
+          processRunner: runner.run,
+          throwOnError: false,
+        );
+
+        expect(files, isEmpty);
+      },
+    );
+
+    test(
+      'rethrows when processRunner throws and throwOnError is true',
+      () async {
+        final runner = MockProcessRunner(
+          exceptionToThrow: Exception('process failed'),
+        );
+
+        expect(
+          () => defaultGitList(
+            baseBranch: 'origin/main',
+            processRunner: runner.run,
+            throwOnError: true,
+          ),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
   });
 }

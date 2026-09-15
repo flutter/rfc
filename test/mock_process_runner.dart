@@ -4,14 +4,15 @@
 
 import 'dart:io';
 
-typedef MockProcessHandler =
-    Future<ProcessResult> Function(String executable, List<String> arguments);
+import 'package:rfc_tools/src/process_runner.dart';
+
+export 'package:rfc_tools/src/process_runner.dart' show ProcessRunner;
 
 /// In-memory mock process runner to record external process invocations and
 /// control process outputs hermetically in tests.
 class MockProcessRunner {
   final List<({String executable, List<String> arguments})> calls = [];
-  MockProcessHandler? handler;
+  ProcessRunner? handler;
   int exitCode;
   dynamic stdout;
   dynamic stderr;

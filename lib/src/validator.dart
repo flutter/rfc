@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:io' show Process, ProcessException;
 import 'dart:math';
 import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
 
 import 'git_lister.dart';
+import 'git_lister.dart' as git_lister;
 import 'github_annotation.dart';
 import 'models/rfc_file.dart';
+import 'process_runner.dart';
 
 export 'git_lister.dart' show GitListFunction, defaultGitList;
 
@@ -64,7 +67,20 @@ class RfcValidator {
   final FileSystem fs;
   final GitListFunction gitList;
 
-  const RfcValidator({required this.fs, this.gitList = defaultGitList});
+  const RfcValidator({
+    required this.fs,
+    this.gitList = RfcValidator.defaultGitList,
+  });
+
+  /// Discovers RFC filenames in base branch via git, throwing on failure.
+  static Future<Set<String>> defaultGitList({
+    String baseBranch = 'origin/main',
+    ProcessRunner processRunner = Process.run,
+  }) => git_lister.defaultGitList(
+    baseBranch: baseBranch,
+    processRunner: processRunner,
+    throwOnError: true,
+  );
 
   /// Runs semantic validation on all RFC files in the repository.
   ///
@@ -131,9 +147,26 @@ class RfcValidator {
     }
 
     // Discover and index base branch RFCs if --check-base is requested.
-    final baseBranchCategories = <String, _BaseBranchCategory>{
-      if (checkBase) ...await _indexBaseBranchBySubsystem(baseBranch),
-    };
+    Map<String, _BaseBranchCategory> baseBranchCategories = const {};
+    if (checkBase) {
+      try {
+        baseBranchCategories = await _indexBaseBranchBySubsystem(baseBranch);
+      } catch (e) {
+        final message = switch (e) {
+          ProcessException(:final message, :final errorCode) =>
+            message.isNotEmpty ? message : 'Exit code $errorCode',
+          _ => '$e',
+        };
+        errors.add(
+          ValidationError(
+            filePath: '',
+            message:
+                "Failed to discover RFCs on base branch '$baseBranch': $message",
+          ),
+        );
+        return (isSuccess: false, errors: errors);
+      }
+    }
 
     // For each category AAA:
     //   - verify no duplicates
