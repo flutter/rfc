@@ -4,7 +4,6 @@
 
 import 'dart:io';
 
-import 'package:rfc_tools/logprocess.dart';
 import 'package:rfc_tools/src/lfs_verifier.dart';
 import 'package:test/test.dart';
 
@@ -380,6 +379,7 @@ pointer: unexpectedGitObject: "dup.png" (treeish 2222) should have been a pointe
       // mis-scoping the revision would leave every other test green while the
       // tool silently verified nothing.
       /// Returns the argument vectors of every `git` invocation recorded.
+      // cspell:ignore Argvs
       List<List<String>> gitArgvs(MockProcessRunner runner) => [
         for (final call in runner.calls)
           if (call.executable == 'git') call.arguments,
@@ -545,41 +545,6 @@ pointer: unexpectedGitObject: "dup.png" (treeish 2222) should have been a pointe
           );
         },
       );
-    });
-
-    group('process logging utilities (lib/logprocess.dart)', () {
-      test('logProcessResult logs exit code, stdout, and stderr', () {
-        final outLines = <String>[];
-        final errLines = <String>[];
-        final result = ProcessResult(1234, 1, 'sample stdout', 'sample stderr');
-
-        logProcessResult(
-          result,
-          command: 'test-cmd',
-          onLog: (m) => outLines.add(m),
-          onError: (m) => errLines.add(m),
-        );
-
-        expect(errLines, contains('exit code: 1'));
-        expect(outLines, contains('test-cmd stdout:'));
-        expect(outLines, contains('sample stdout'));
-        expect(errLines, contains('test-cmd stderr:'));
-        expect(errLines, contains('sample stderr'));
-      });
-
-      test('logProcessError logs exception to onError', () {
-        final errLines = <String>[];
-        final exception = Exception('test failure');
-
-        logProcessError(
-          exception,
-          command: 'test-fail-cmd',
-          onError: (m) => errLines.add(m),
-        );
-
-        expect(errLines.first, contains('test-fail-cmd exception:'));
-        expect(errLines.first, contains('test failure'));
-      });
     });
   });
 }

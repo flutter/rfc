@@ -47,7 +47,7 @@ typedef LfsVerificationResult = ({bool isSuccess, List<LfsIssue> issues});
 /// Verifier that enforces Git LFS pointer consistency for repository trees
 /// using `git lfs fsck --pointers`.
 ///
-/// Rather than maintaining a duplicate whitelist of file extensions in Dart,
+/// Rather than maintaining a duplicate allowlist of file extensions in Dart,
 /// this tool treats `.gitattributes` as the single source of truth:
 /// Git LFS natively parses `.gitattributes` and verifies that all matching files
 /// are stored as valid LFS pointers in the Git object database.
@@ -150,7 +150,7 @@ class LfsVerifier {
   Future<void> _runFsck({
     required List<String> revisions,
     required List<LfsIssue> issues,
-    Set<String>? allowedFiles,
+    Set<String>? trackedFiles,
   }) async {
     final fsckResult = await processRunner('git', [
       'lfs',
@@ -189,7 +189,7 @@ class LfsVerifier {
     }
 
     for (final issue in parsed) {
-      if (allowedFiles == null || allowedFiles.contains(issue.filePath)) {
+      if (trackedFiles == null || trackedFiles.contains(issue.filePath)) {
         issues.add(issue);
       }
     }
@@ -272,7 +272,7 @@ class LfsVerifier {
       await _runFsck(
         revisions: ['HEAD'],
         issues: issues,
-        allowedFiles: normalizedDiffFiles,
+        trackedFiles: normalizedDiffFiles,
       );
     }
 
