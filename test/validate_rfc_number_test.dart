@@ -212,7 +212,7 @@ title: Feature
 
     test('default constructor uses RfcValidator.defaultGitList', () {
       final validator = RfcValidator(fs: fs);
-      expect(validator.gitList, equals(RfcValidator.defaultGitList));
+      expect(validator.gitList, equals(RfcValidator.defaultGitListThrows));
     });
 
     test(
@@ -224,7 +224,7 @@ title: Feature
         );
 
         expect(
-          () => RfcValidator.defaultGitList(
+          () => RfcValidator.defaultGitListThrows(
             baseBranch: 'origin/main',
             processRunner: runner.run,
           ),

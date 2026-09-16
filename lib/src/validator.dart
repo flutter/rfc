@@ -8,7 +8,6 @@ import 'package:file/file.dart';
 import 'package:path/path.dart' as p;
 
 import 'git_lister.dart';
-import 'git_lister.dart' as git_lister;
 import 'github_annotation.dart';
 import 'models/rfc_file.dart';
 import 'process_runner.dart';
@@ -69,14 +68,14 @@ class RfcValidator {
 
   const RfcValidator({
     required this.fs,
-    this.gitList = RfcValidator.defaultGitList,
+    this.gitList = RfcValidator.defaultGitListThrows,
   });
 
   /// Discovers RFC filenames in base branch via git, throwing on failure.
-  static Future<Set<String>> defaultGitList({
+  static Future<Set<String>> defaultGitListThrows({
     String baseBranch = 'origin/main',
     ProcessRunner processRunner = Process.run,
-  }) => git_lister.defaultGitList(
+  }) => defaultGitList(
     baseBranch: baseBranch,
     processRunner: processRunner,
     throwOnError: true,
