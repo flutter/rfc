@@ -11,14 +11,21 @@ on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] Isolated two-checkout model prevents code execution from untrusted PR
     types: [labeled]
 
+# Workflow-level default permissions:
+# Explicitly set to empty ({}) to enforce least privilege by default.
+# Any job added to this file starts with zero permissions unless explicitly
+# granted in its own job-level `permissions:` block below.
+permissions: {}
+
 jobs:
   assign-number:
+    name: assign-number
     if: github.event.label.name == 'assign-rfc-number'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: write # Required to push assigned RFC commit to same-repository PR branches
+      pull-requests: write # Required to add/remove RFC lifecycle labels on the PR
+      issues: write # Required to post status and fallback comments on the PR
 
     steps:
       # --- Sandbox 1: Trusted Tooling Setup ---
@@ -47,13 +54,27 @@ jobs:
           sparse-checkout-cone-mode: false
           fetch-depth: 0
           persist-credentials: false
+          # Note: `allow-unsafe-pr-checkout: true` opts out of actions/checkout v7's blanket
+          # block on fork checkouts in `pull_request_target`. This is safe because:
+          # 1. We only sparse-checkout `rfc/` markdown documents into a separate `target/` directory.
+          # 2. `persist-credentials: false` prevents token leakage into `.git/config`.
+          # 3. No code, scripts, or dependencies from `target/` are ever executed.
+          allow-unsafe-pr-checkout: true
 
+      # Configures the GitHub CLI credential helper (`gh auth setup-git`) using
+      # FLUTTERACTIONSBOT_RFC_TOKEN (falling back to GITHUB_TOKEN if unset) so
+      # remote git operations (`git fetch`, `git push`) authenticate without
+      # embedding credentials into `.git/config` or remote URLs.
       - name: Configure Git
         working-directory: target
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch "https://github.com/${{ github.repository }}.git" main:origin/main
+          gh auth setup-git
+          git config --global user.name "flutteractionsbot"
+          git config --global user.email "<flutter-actions-bot@google.com>"
+          git fetch "https://github.com/${BASE_REPO}.git" main:origin/main
+        env:
+          BASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.FLUTTERACTIONSBOT_RFC_TOKEN || secrets.GITHUB_TOKEN }}
 
       # --- Execution & Delivery ---
       - name: Assign RFC Number
@@ -61,37 +82,77 @@ jobs:
         working-directory: target
         run: dart run ../tools/bin/assign_rfc_number.dart
 
+      # Update labels BEFORE pushing changes:
+      # When pushing with FLUTTERACTIONSBOT_RFC_TOKEN (a user PAT), GitHub immediately
+      # triggers `pull_request` (`synchronize`) workflows like `rfc-lint.yml`.
+      # Applying `rfc-assigned` first ensures `rfc-lint` sees the label and permits
+      # the newly assigned non-0000 RFC number.
+      - name: Update PR Labels
+        if: success()
+        run: |
+          gh pr edit "$PR_NUMBER" --repo "$REPO" \
+            --add-label rfc-assigned \
+            --remove-label assign-rfc-number || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+
       - name: Commit and Push Changes
         if: success()
         working-directory: target
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RFC_ID: ${{ steps.assign.outputs.rfc_id }}
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           git add -A rfc/
           git commit -m "docs(rfc): assign RFC ${RFC_ID}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:${PR_HEAD_REF}"
+          git push "https://github.com/${REPO}.git" "HEAD:${PR_HEAD_REF}"
+        env:
+          GH_TOKEN: ${{ secrets.FLUTTERACTIONSBOT_RFC_TOKEN || secrets.GITHUB_TOKEN }}
+          RFC_ID: ${{ steps.assign.outputs.rfc_id }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.event.pull_request.head.repo.full_name }}
 
       - name: Handle Success
         if: success()
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Assigned RFC ${RFC_ID}." || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RFC_ID: ${{ steps.assign.outputs.rfc_id }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-        run: |
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label assign-rfc-number || true
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label rfc-assigned || true
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Assigned RFC ${RFC_ID}." || true
 
       - name: Handle Failure
         if: failure()
+        run: |
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label assign-rfc-number || true
+          if [ -n "$RFC_ID" ]; then
+            cat <<EOF > comment.txt
+          Assigned **RFC ${RFC_ID}**, but failed to automatically push the commit to your pull request branch (this commonly happens if "Allow edits from maintainers" is disabled on a fork PR, or if the fork belongs to an organization).
+
+          Please examine the [workflow run logs](${RUN_URL}) and run the following commands locally on your branch to apply the assigned RFC number:
+
+          \`\`\`sh
+          dart run bin/assign_rfc_number.dart
+          git add -A rfc/
+          git commit -m "docs(rfc): assign RFC ${RFC_ID}"
+          git push
+          \`\`\`
+          EOF
+          else
+            cat <<EOF > comment.txt
+          Failed to automatically assign an RFC number.
+
+          Please examine the [workflow run logs](${RUN_URL}) to review the error details, or run the tool locally to diagnose and assign your RFC number:
+
+          \`\`\`sh
+          dart run bin/assign_rfc_number.dart
+          \`\`\`
+          EOF
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file comment.txt || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-        run: |
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label assign-rfc-number || true
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Failed to automatically assign RFC number. Check workflow logs for details." || true
+          RFC_ID: ${{ steps.assign.outputs.rfc_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
