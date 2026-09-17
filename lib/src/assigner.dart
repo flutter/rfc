@@ -43,10 +43,12 @@ class RfcAssigner {
 
   final FileSystem fs;
   final GitListFunction gitList;
+  final String rfcDirPath;
 
   const RfcAssigner({
     required this.fs,
     this.gitList = RfcAssigner.defaultGitList,
+    this.rfcDirPath = RfcAssigner.rfcDir,
   });
 
   /// Discovers RFC filenames in main branch via git.
@@ -100,16 +102,17 @@ class RfcAssigner {
     Future<Set<String>> getMainFiles() async =>
         cachedMainFiles ??= await _getMainBranchRfcFiles();
 
-    final dir = fs.directory(rfcDir);
+    final rfcDir = fs.directory(rfcDirPath);
+    await _assertSafeDirectory(rfcDir);
 
     // Identify the target RFC file to assign.
     final RfcFile targetRfc;
     List<FileSystemEntity>? cachedEntries;
 
     if (targetPath != null) {
-      targetRfc = await _resolveExplicitTarget(targetPath, dir);
+      targetRfc = await _resolveExplicitTarget(targetPath, rfcDir);
     } else {
-      (targetRfc, cachedEntries) = await _discoverTarget(dir, getMainFiles);
+      (targetRfc, cachedEntries) = await _discoverTarget(rfcDir, getMainFiles);
     }
 
     final category = targetRfc.category!;
@@ -121,8 +124,14 @@ class RfcAssigner {
     final prefix = '$category.';
     final targetBasename = p.basename(targetRfc.path);
 
-    final entries = cachedEntries ?? await dir.list().toList();
+    final entries =
+        cachedEntries ?? await rfcDir.list(followLinks: false).toList();
     for (final entry in entries) {
+      if (entry is Link || await fs.isLink(entry.path)) {
+        throw StateError(
+          'Symbolic links are not permitted in the RFC directory: "${entry.path}".',
+        );
+      }
       if (entry is! File) continue;
       final fileName = p.basename(entry.path);
       if (fileName == targetBasename) continue;
@@ -172,6 +181,9 @@ class RfcAssigner {
     final newFileName = '$category.$newIndexStr-${targetRfc.slug}.md';
     final newPath = p.join(p.dirname(targetRfc.path), newFileName);
 
+    await _assertSafeFile(targetRfc.path, rfcDir);
+    await _assertSafeFile(newPath, rfcDir);
+
     // Execute filesystem changes if not dryRun
     if (!dryRun) {
       final oldFile = fs.file(targetRfc.path);
@@ -196,10 +208,40 @@ class RfcAssigner {
     );
   }
 
+  Future<void> _assertSafeDirectory(Directory dir) async {
+    if (await fs.isLink(dir.path)) {
+      throw StateError(
+        'RFC directory "${dir.path}" must not be a symbolic link.',
+      );
+    }
+    if (!await dir.exists()) {
+      throw StateError('RFC directory "$rfcDirPath" does not exist.');
+    }
+  }
+
+  Future<void> _assertSafeFile(String path, Directory baseDir) async {
+    if (await fs.isLink(path)) {
+      throw StateError('RFC file "$path" must not be a symbolic link.');
+    }
+    final canonicalBase = await baseDir.resolveSymbolicLinks();
+    final parentDir = fs.directory(p.dirname(path));
+    if (await fs.isLink(parentDir.path)) {
+      throw StateError(
+        'Parent directory of "$path" must not be a symbolic link.',
+      );
+    }
+    final canonicalParent = await parentDir.resolveSymbolicLinks();
+    if (!p.equals(canonicalBase, canonicalParent) &&
+        !p.isWithin(canonicalBase, canonicalParent)) {
+      throw StateError('RFC file "$path" resolves outside of "$rfcDirPath".');
+    }
+  }
+
   Future<RfcFile> _resolveExplicitTarget(
     String targetPath,
     Directory dir,
   ) async {
+    await _assertSafeFile(targetPath, dir);
     final targetFile = fs.file(targetPath);
     if (!await targetFile.exists()) {
       throw ArgumentError('Target RFC file "$targetPath" does not exist.');
@@ -211,9 +253,6 @@ class RfcAssigner {
         '"AAA.NNNN-<slug>.md".',
       );
     }
-    if (!await dir.exists()) {
-      throw StateError('RFC directory "$rfcDir" does not exist.');
-    }
     final content = await targetFile.readAsString();
     return RfcFile.parse(content, path: targetPath);
   }
@@ -222,12 +261,14 @@ class RfcAssigner {
     Directory dir,
     Future<Set<String>> Function() getMainFiles,
   ) async {
-    if (!await dir.exists()) {
-      throw StateError('RFC directory "$rfcDir" does not exist.');
-    }
-    final cachedEntries = await dir.list().toList();
+    final cachedEntries = await dir.list(followLinks: false).toList();
     final draftFiles = <File>[];
     for (final entry in cachedEntries) {
+      if (entry is Link || await fs.isLink(entry.path)) {
+        throw StateError(
+          'Symbolic links are not permitted in the RFC directory: "${entry.path}".',
+        );
+      }
       if (entry is File) {
         final fileName = p.basename(entry.path);
         final match = RfcFile.filenamePattern.firstMatch(fileName);
@@ -239,11 +280,12 @@ class RfcAssigner {
 
     if (draftFiles.length == 1) {
       final draftFile = draftFiles.first;
+      await _assertSafeFile(draftFile.path, dir);
       final content = await draftFile.readAsString();
       return (RfcFile.parse(content, path: draftFile.path), cachedEntries);
     } else if (draftFiles.length > 1) {
       throw StateError(
-        'Multiple draft RFCs (.0000) found in "$rfcDir". '
+        'Multiple draft RFCs (.0000) found in "$rfcDirPath". '
         'Specify --target-file explicitly.',
       );
     } else {
@@ -251,7 +293,7 @@ class RfcAssigner {
       // RFC that collides with main (e.g. another PR merged with the same number while
       // this PR was in review). The validator prevents the collision from landing in main;
       // this auto-discovers the colliding file so [assign] can reallocate it.
-      final targetRfc = await _reallocate(cachedEntries, getMainFiles);
+      final targetRfc = await _reallocate(dir, cachedEntries, getMainFiles);
       return (targetRfc, cachedEntries);
     }
   }
@@ -270,6 +312,7 @@ class RfcAssigner {
   /// colliding RFC so [assign] can re-allocate it to the next available number
   /// (e.g. `110.0043`) without requiring the author to manually revert to `.0000`.
   Future<RfcFile> _reallocate(
+    Directory dir,
     List<FileSystemEntity> cachedEntries,
     Future<Set<String>> Function() getMainFiles,
   ) async {
@@ -307,6 +350,7 @@ class RfcAssigner {
 
     if (collidingFiles.length == 1) {
       final collidingFile = collidingFiles.first;
+      await _assertSafeFile(collidingFile.path, dir);
       final content = await collidingFile.readAsString();
       return RfcFile.parse(content, path: collidingFile.path);
     } else if (collidingFiles.length > 1) {
@@ -315,7 +359,7 @@ class RfcAssigner {
       );
     } else {
       throw StateError(
-        'No RFC requiring number assignment found in "$rfcDir". '
+        'No RFC requiring number assignment found in "$rfcDirPath". '
         'Draft RFCs must use index ".0000" to be assigned a number.',
       );
     }

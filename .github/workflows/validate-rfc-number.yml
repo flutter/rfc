@@ -11,6 +11,8 @@ on:
     paths:
       - 'rfc/**'
 
+permissions: {}
+
 jobs:
   validate-rfc-number:
     name: validate-rfc-number

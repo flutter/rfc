@@ -108,13 +108,20 @@ class RfcValidator {
       return (isSuccess: false, errors: errors);
     }
 
-    final entries = await dir.list().toList();
+    final entries = await dir.list(followLinks: false).toList();
     entries.sort((a, b) => a.path.compareTo(b.path));
 
     // Validate file-level naming/draft invariants and group valid RFCs by category (AAA).
     final rfcsByCategory = <String, List<RfcFile>>{};
     for (final entry in entries) {
-      if (entry is File && entry.path.endsWith('.md')) {
+      if (entry is Link || await fs.isLink(entry.path)) {
+        errors.add(
+          ValidationError(
+            filePath: entry.path,
+            message: 'Symbolic links are not permitted in the RFC directory.',
+          ),
+        );
+      } else if (entry is File && entry.path.endsWith('.md')) {
         final rfc = RfcFile.fromPath(entry.path);
 
         _validateFileStructure(

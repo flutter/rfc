@@ -132,6 +132,22 @@ void main() {
           ),
         );
       });
+
+      test(
+        'percent-encodes colons and commas in filePath and title properties',
+        () {
+          final annotation = 'Property injection attempt'.toGithubAnnotation(
+            filePath: 'rfc/evil,title=Hacked::Injected.md',
+            title: 'Title: With, Special%Chars',
+          );
+          expect(
+            annotation,
+            equals(
+              '::error file=rfc/evil%2Ctitle=Hacked%3A%3AInjected.md,title=Title%3A With%2C Special%25Chars::Property injection attempt',
+            ),
+          );
+        },
+      );
     });
   });
 

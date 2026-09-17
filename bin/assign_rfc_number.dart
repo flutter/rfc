@@ -10,6 +10,11 @@ import 'package:rfc_tools/src/assigner.dart';
 void main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption(
+      'target-dir',
+      defaultsTo: RfcAssigner.rfcDir,
+      help: 'Directory containing RFC markdown documents.',
+    )
+    ..addOption(
       'target-file',
       help:
           'Specific RFC file path to assign (defaults to auto-detecting draft .0000).',
@@ -42,11 +47,12 @@ void main(List<String> arguments) async {
     return;
   }
 
+  final targetDir = results.option('target-dir') ?? RfcAssigner.rfcDir;
   final targetFile = results.rest.firstOrNull ?? results.option('target-file');
   final dryRun = results.flag('dry-run');
 
   const fs = LocalFileSystem();
-  final assigner = RfcAssigner(fs: fs);
+  final assigner = RfcAssigner(fs: fs, rfcDirPath: targetDir);
 
   try {
     stdout.writeln('Assigning RFC number...');

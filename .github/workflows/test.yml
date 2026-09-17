@@ -16,6 +16,8 @@ on:
       - 'analysis_options.yaml'
       - '.github/workflows/test.yml'
 
+permissions: {}
+
 jobs:
   test:
     name: Dart Format, Analyze, and Test

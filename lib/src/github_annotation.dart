@@ -19,6 +19,16 @@ extension GithubAnnotationExtension on String {
     ).replaceAll('\r', '%0D').replaceAll('\n', '%0A');
   }
 
+  /// Encodes special characters (`%`, `\r`, `\n`, `:`, `,`) in this string per
+  /// GitHub Actions workflow command property specifications (`escapeProperty`).
+  String toGithubWorkflowProperty() {
+    return replaceAll('%', '%25')
+        .replaceAll('\r', '%0D')
+        .replaceAll('\n', '%0A')
+        .replaceAll(':', '%3A')
+        .replaceAll(',', '%2C');
+  }
+
   /// Formats this string message as a GitHub Actions workflow annotation.
   ///
   /// Example:
@@ -41,11 +51,12 @@ extension GithubAnnotationExtension on String {
     String? title,
   }) {
     final encoded = toGithubWorkflowValue();
+    final escapedPath = filePath.toGithubWorkflowProperty();
     final params = <String>[
-      'file=$filePath',
+      'file=$escapedPath',
       if (line != null) 'line=$line',
       if (column != null) 'col=$column',
-      if (title != null) 'title=$title',
+      if (title != null) 'title=${title.toGithubWorkflowProperty()}',
     ].join(',');
 
     return '::$type $params::$encoded';

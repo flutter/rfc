@@ -11,13 +11,14 @@ on:
     paths:
       - 'rfc/**'
 
+permissions: {}
+
 jobs:
   lint-rfcs:
     name: lint-rfcs
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout Code
@@ -35,8 +36,6 @@ jobs:
       - name: Get Changed RFCs
         id: changed-rfcs
         if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
         run: |
           BASE_TARGET="origin/${BASE_REF:-main}"
           if ! git rev-parse --verify "$BASE_TARGET" >/dev/null 2>&1; then
@@ -47,33 +46,34 @@ jobs:
             FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_TARGET" -- 'rfc/*.md' 2>/dev/null || true)
           fi
           if [ -n "$FILES" ]; then
+            EOF_MARKER="EOF_$(openssl rand -hex 16)"
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             {
-              echo "files<<EOF"
+              echo "files<<$EOF_MARKER"
               echo "$FILES"
-              echo "EOF"
+              echo "$EOF_MARKER"
             } >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          BASE_REF: ${{ github.base_ref }}
 
       - name: Run RFC Linter (PR Mode)
         if: github.event_name == 'pull_request' && steps.changed-rfcs.outputs.has_changes == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-          CHANGED_FILES: ${{ steps.changed-rfcs.outputs.files }}
         run: |
+          mapfile -t FILES_ARRAY <<< "$CHANGED_FILES"
           dart run bin/rfc_lint.dart \
             --enforce-drafts \
             --labels "$LABELS" \
             --github-actions \
-            $CHANGED_FILES
+            -- "${FILES_ARRAY[@]}"
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          CHANGED_FILES: ${{ steps.changed-rfcs.outputs.files }}
 
       - name: Run RFC Linter (Merge Queue & Main Mode)
         if: github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           dart run bin/rfc_lint.dart \
             --github-actions

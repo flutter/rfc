@@ -462,9 +462,114 @@ authors: [https://github.com/octocat]
       );
     });
 
-    test('default constructor uses RfcAssigner.defaultGitList', () {
+    test('default constructor uses RfcAssigner.defaultGitList and rfcDir', () {
       final assigner = RfcAssigner(fs: fs);
       expect(assigner.gitList, equals(RfcAssigner.defaultGitList));
+      expect(assigner.rfcDirPath, equals('rfc'));
+    });
+
+    test(
+      'assigns RFC number using custom rfcDirPath (isolated directory execution)',
+      () async {
+        final targetDir = await fs
+            .directory('workspace/target/rfc')
+            .create(recursive: true);
+        await targetDir
+            .childFile('110.0000-isolated-feature.md')
+            .writeAsString(rfcBody('110.0000', 'Isolated Feature'));
+
+        final simulatedMain = {
+          'rfc/110.0001-existing-main.md',
+          'rfc/110.0002-existing-main-2.md',
+        };
+
+        final assigner = RfcAssigner(
+          fs: fs,
+          rfcDirPath: 'workspace/target/rfc',
+          gitList: ({String baseBranch = 'origin/main'}) async => simulatedMain,
+        );
+
+        final result = await assigner.assign();
+
+        expect(result.category, equals('110'));
+        expect(result.newIndex, equals(3));
+        expect(
+          result.newPath,
+          equals('workspace/target/rfc/110.0003-isolated-feature.md'),
+        );
+        expect(
+          await fs
+              .file('workspace/target/rfc/110.0000-isolated-feature.md')
+              .exists(),
+          isFalse,
+        );
+        expect(
+          await fs
+              .file('workspace/target/rfc/110.0003-isolated-feature.md')
+              .exists(),
+          isTrue,
+        );
+      },
+    );
+
+    test('throws StateError when custom rfcDirPath does not exist', () async {
+      final assigner = RfcAssigner(
+        fs: fs,
+        rfcDirPath: 'nonexistent/target/rfc',
+      );
+      expect(
+        () => assigner.assign(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('nonexistent/target/rfc'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects symbolic links inside the RFC directory', () async {
+      await fs.file('secret.txt').writeAsString('SENSITIVE_RUNNER_DATA');
+      await fs.link('rfc/110.0000-symlink-exploit.md').create('../secret.txt');
+
+      final assigner = createAssigner();
+      expect(
+        () => assigner.assign(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Symbolic links are not permitted'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects pre-existing destination symlink overwrite attacks', () async {
+      await fs
+          .file('rfc/110.0000-exploit.md')
+          .writeAsString(rfcBody('110.0000', 'Exploit'));
+      await fs.file('secret.txt').writeAsString('SENSITIVE_RUNNER_DATA');
+      // Attacker creates a symlink at the predicted target path 110.0001-exploit.md
+      await fs.link('rfc/110.0001-exploit.md').create('../secret.txt');
+
+      final assigner = createAssigner();
+      expect(
+        () => assigner.assign(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Symbolic links are not permitted'),
+          ),
+        ),
+      );
+      // Verify secret.txt was not overwritten
+      expect(
+        await fs.file('secret.txt').readAsString(),
+        equals('SENSITIVE_RUNNER_DATA'),
+      );
     });
 
     test(

@@ -61,6 +61,16 @@ class RfcLinter {
     final issues = <LintIssue>[];
     final relativePath = file.path;
 
+    if (await fs.isLink(file.path)) {
+      issues.add(
+        LintIssue(
+          filePath: relativePath,
+          message: 'Symbolic links are not permitted in the RFC directory.',
+        ),
+      );
+      return issues;
+    }
+
     if (!await file.exists()) {
       issues.add(LintIssue(filePath: relativePath, message: 'File not found.'));
       return issues;
@@ -205,11 +215,18 @@ class RfcLinter {
       return issues;
     }
 
-    final entries = await dir.list().toList();
+    final entries = await dir.list(followLinks: false).toList();
     entries.sort((a, b) => a.path.compareTo(b.path));
 
     for (final entry in entries) {
-      if (entry is File && entry.path.endsWith('.md')) {
+      if (entry is Link || await fs.isLink(entry.path)) {
+        issues.add(
+          LintIssue(
+            filePath: entry.path,
+            message: 'Symbolic links are not permitted in the RFC directory.',
+          ),
+        );
+      } else if (entry is File && entry.path.endsWith('.md')) {
         issues.addAll(await lintFile(entry));
       }
     }

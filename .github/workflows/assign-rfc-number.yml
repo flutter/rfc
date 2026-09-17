@@ -5,7 +5,8 @@ name: RFC Number Assigner
 # workflow implements a strict two-checkout isolation model using separate sibling directories:
 # 1. tools/: Contains trusted tooling from main. dart pub get runs only here.
 # 2. target/: Contains only rfc/ markdown content from the PR branch via sparse checkout.
-# 3. dart run ../tools/bin/assign_rfc_number.dart runs from target/ executing only trusted bytecode.
+# 3. dart run bin/assign_rfc_number.dart runs from tools/ (passing --target-dir="../target/rfc")
+#    executing only trusted bytecode and package configurations.
 # 4. Gated by the maintainer-applied 'assign-rfc-number' label.
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] Isolated two-checkout model prevents code execution from untrusted PR
@@ -61,26 +62,14 @@ jobs:
           # 3. No code, scripts, or dependencies from `target/` are ever executed.
           allow-unsafe-pr-checkout: true
 
-      # Configures the GitHub CLI credential helper (`gh auth setup-git`) using
-      # FLUTTERACTIONSBOT_RFC_TOKEN (falling back to GITHUB_TOKEN if unset) so
-      # remote git operations (`git fetch`, `git push`) authenticate without
-      # embedding credentials into `.git/config` or remote URLs.
-      - name: Configure Git
-        working-directory: target
-        run: |
-          gh auth setup-git
-          git config --global user.name "flutteractionsbot"
-          git config --global user.email "<flutter-actions-bot@google.com>"
-          git fetch "https://github.com/${BASE_REPO}.git" main:origin/main
-        env:
-          BASE_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.FLUTTERACTIONSBOT_RFC_TOKEN || secrets.GITHUB_TOKEN }}
-
       # --- Execution & Delivery ---
+      # Runs strictly in the trusted 'tools' directory so Dart resolves package
+      # configs from 'tools/' and git ls-tree queries 'origin/main' directly from
+      # the trusted repository checkout before any git credentials are configured.
       - name: Assign RFC Number
         id: assign
-        working-directory: target
-        run: dart run ../tools/bin/assign_rfc_number.dart
+        working-directory: tools
+        run: dart run bin/assign_rfc_number.dart --target-dir="../target/rfc"
 
       # Update labels BEFORE pushing changes:
       # When pushing with FLUTTERACTIONSBOT_RFC_TOKEN (a user PAT), GitHub immediately
@@ -98,13 +87,26 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
 
+      # Configures the GitHub CLI credential helper (`gh auth setup-git`) using
+      # FLUTTERACTIONSBOT_RFC_TOKEN (falling back to GITHUB_TOKEN if unset) so
+      # remote git operations (`git push`) authenticate without embedding
+      # credentials into `.git/config` or remote URLs.
+      - name: Configure Git
+        if: success()
+        run: |
+          gh auth setup-git
+          git config --global user.name "flutteractionsbot"
+          git config --global user.email "<flutter-actions-bot@google.com>"
+        env:
+          GH_TOKEN: ${{ secrets.FLUTTERACTIONSBOT_RFC_TOKEN || secrets.GITHUB_TOKEN }}
+
       - name: Commit and Push Changes
         if: success()
         working-directory: target
         run: |
-          git add -A rfc/
-          git commit -m "docs(rfc): assign RFC ${RFC_ID}"
-          git push "https://github.com/${REPO}.git" "HEAD:${PR_HEAD_REF}"
+          git -c core.hooksPath=/dev/null add -A rfc/
+          git -c core.hooksPath=/dev/null commit --no-verify -m "docs(rfc): assign RFC ${RFC_ID}"
+          git -c core.hooksPath=/dev/null push "https://github.com/${REPO}.git" "HEAD:${PR_HEAD_REF}"
         env:
           GH_TOKEN: ${{ secrets.FLUTTERACTIONSBOT_RFC_TOKEN || secrets.GITHUB_TOKEN }}
           RFC_ID: ${{ steps.assign.outputs.rfc_id }}
