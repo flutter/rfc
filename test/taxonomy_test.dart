@@ -16,7 +16,7 @@ void main() {
 Governance and how the Flutter project itself functions.
 
 * **000:** RFC Process & Templates
-* **010:** Governance & Steering Committees
+* **010:** General Team Process & Policy
 
 ### 100 – Flutter Framework Core
 The Dart-side architecture of Flutter.
