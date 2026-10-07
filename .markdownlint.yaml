@@ -1,5 +1,7 @@
 default: true # Enable all standard markdownlint rules by default
 MD013: false # Do not enforce line lengths (diff churning, table lengths, diagrams etc)
+MD024:
+  siblings_only: true
 MD025:
   front_matter_title: "" # Do not treat frontmatter title as H1 heading (RFC H1 is in body)
 MD033: false # Allow inline HTML (badges, centered logos/images, details/summary folds)
