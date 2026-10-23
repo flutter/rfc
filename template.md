@@ -21,7 +21,7 @@ authors:
 
 ## Goals
 
-*Sometimes it's worth scoping out what you are trying to acheive and what is outside of the scope of the proposal.*
+*Here you list what we are trying to acheive and the scope of the proposal.  If you have need, list specific non-goals as a subheading.*
 
 ## Background
 
@@ -34,6 +34,10 @@ authors:
 ## Testing
 
 *This should outline how we'll test the proposed design with an eye to how we'll mitigate any risk introduced in the design.*
+
+## Rollout
+
+*OPTIONAL: Some designs require consideration about how they will be introduced.  For example, adding a shim that will be removed in the future to facilitate migration.*
 
 ## Alternatives Considered
 
