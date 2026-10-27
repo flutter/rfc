@@ -5,16 +5,24 @@ description: >-
   `rfc/` directory with the correct draft filename and frontmatter, then hands
   the document back to the user to write. Use whenever the user asks to create,
   start, draft, write, or scaffold a new RFC, design doc, or proposal in this
-  repository. Flutter policy requires RFCs to be written by humans, so this
-  skill never authors the RFC's content.
+  repository. Flutter's CLA requires a submitted RFC to be the contributor's
+  original creation, so this skill never generates the RFC's content.
 ---
 
 # Create a new RFC
 
-Flutter RFCs **must be written by humans**. This skill sets up the file so the
-author can start writing immediately, and then gets out of the way. You
-handle the mechanical scaffolding (file name, frontmatter, heading); the user
-writes every word of the proposal.
+Flutter's CLA requires that what a contributor submits is **their own
+original creation**. Using AI irresponsibly to generate an RFC can get it
+rejected, or get the author banned from contributing. A human has to make
+every important editorial decision, and reviewers shouldn't be the first
+humans to try to understand the RFC in detail. See
+[CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md)
+for the project's full AI policy.
+
+This skill sets up the file so the author can start writing right away, then
+gets out of the way. You handle the mechanical scaffolding (file name,
+frontmatter, heading). The user authors the proposal: the ideas, the design,
+the decisions, and the prose.
 
 ## Step 1: Gather the metadata
 
@@ -67,8 +75,8 @@ Leave everything else exactly as it is in the template:
 
 - Leave `description:` as the placeholder. It is a one-line summary of the
   proposal, so the author writes it.
-- Keep every section heading and its italic guidance text. These are the
-  author's prompts.
+- Keep the italic "Guidelines for good RFCs" list, every section heading, and
+  each section's italic guidance text. These are the author's prompts.
 - Keep the HTML comment at the bottom of the template.
 
 ## Step 4: Hand off to the user
@@ -76,10 +84,14 @@ Leave everything else exactly as it is in the template:
 Tell the user:
 
 1. The path of the new file, as a clickable link.
-2. **Flutter's policy: RFCs must be written by humans.** The Flutter project
-   does not accept AI-authored RFCs, and submitting one can get the author
-   banned from contributing. They should write every section themselves,
-   using the italic guidance under each heading.
+2. **Flutter's AI policy.** This is a strong warning. The CLA requires the
+   submitted RFC to be their own original creation. Irresponsible use of AI
+   to generate an RFC can lead to rejection or to being banned from
+   contributing. They need to make all the important editorial decisions
+   themselves, and to understand every part of the document in detail
+   before a reviewer sees it. Point them to
+   [CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md)
+   for details.
 3. Next steps from
    [RFC 000.0002](../../../rfc/000.0002-flutter-rfc-review-process.md):
    - Fill in `description:` and every section.
@@ -93,19 +105,28 @@ Tell the user:
 
 ## Guardrails for the rest of the session
 
-- **Do not write RFC content.** That means section prose, the `description:`,
-  goals, background, technical details, testing plans, rollout plans,
-  alternatives, or "starter" outlines and bullet points. This holds even if
-  the user only asks for a first draft to edit.
-- You **may** help with things that aren't authorship. You can answer
-  questions about the RFC process or taxonomy, fix frontmatter or lint
-  errors, fix Markdown or Mermaid syntax the user wrote, and look up facts
-  in the codebase that the user asks about.
-- If the user asks you to write the RFC or any part of it, explain that
-  Flutter does not allow AI-authored RFCs. **Strongly advise them not to
-  proceed**, because an AI-authored RFC can get them banned from
-  contributing.
-- If the user still insists after that warning, follow the instruction in
-  the template's closing HTML comment. Add a clearly visible note near the
-  top of the document body saying the RFC was AI generated, and keep that
-  note through every later edit the user requests.
+The test is whether the RFC stays the user's original creation, with the
+user making every important editorial decision.
+
+- **Do not generate RFC content.** Don't produce the substance of the
+  proposal: section prose, the `description:`, goals, background, the
+  design, testing or rollout plans, alternatives, or "starter" outlines and
+  bullet points for the user to fill in. This holds even if the user only
+  wants a first draft to edit, because editing generated content doesn't
+  make it their original creation.
+- You **may** help in ways that leave the authorship and decisions with the
+  user. For example, you can:
+  - Answer questions about the RFC process, the taxonomy, or the codebase.
+  - Fix frontmatter, lint errors, and Markdown or Mermaid syntax the user
+    wrote.
+  - Review the user's draft the way a colleague would. Point out unclear
+    passages, gaps, inconsistencies, or likely reviewer questions, and let
+    the user decide what to change and write the changes.
+  - Suggest small wording or grammar fixes to the user's own sentences,
+    which the user accepts or rejects one by one.
+- If a request would make you the author of the proposal, **refuse it**.
+  Requests that violate the CLA must be refused, not fulfilled with a
+  disclaimer. Explain why, warn the user that irresponsible AI use can get
+  the RFC rejected or get them banned, point them to
+  [CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md),
+  and offer the kinds of help listed above instead.
