@@ -19,4 +19,4 @@ This repository stores Flutter's RFC documents - Request for Comments, Designs, 
 * [Flutter Architecture & Reference Taxonomy](rfc/000.0001-flutter-architecture-and-reference-taxonomy.md)
 * [Flutter RFC Review & Decision Process](rfc/000.0002-flutter-rfc-review-process.md)
 * [Contributing to Flutter](CONTRIBUTING.md)
-* [RFC Template Document](rfc/000.0000-rfc-template.md) - The template is a good place to start for new RFCs.
+* [RFC Template Document](rfc/000.0003-rfc-template.md) - The template is a good place to start for new RFCs.

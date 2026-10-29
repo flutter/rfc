@@ -2,7 +2,7 @@
 name: create-rfc
 description: >-
   Scaffolds a new Flutter RFC / design doc by copying
-  `rfc/000.0000-rfc-template.md` to a new file in the `rfc/` directory with
+  `rfc/000.0003-rfc-template.md` to a new file in the `rfc/` directory with
   the correct draft filename and frontmatter, then hands
   the document back to the user to write. Use whenever the user asks to create,
   start, draft, write, or scaffold a new RFC, design doc, or proposal in this
@@ -55,7 +55,7 @@ don't make these up from context.
 4. Copy the template verbatim:
 
    ```sh
-   cp rfc/000.0000-rfc-template.md rfc/AAA.0000-<slug>.md
+   cp rfc/000.0003-rfc-template.md rfc/AAA.0000-<slug>.md
    ```
 
 ## Step 3: Fill in only the mechanical fields
