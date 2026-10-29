@@ -1,8 +1,9 @@
 ---
 name: create-rfc
 description: >-
-  Scaffolds a new Flutter RFC / design doc by copying `template.md` into the
-  `rfc/` directory with the correct draft filename and frontmatter, then hands
+  Scaffolds a new Flutter RFC / design doc by copying
+  `rfc/000.0000-rfc-template.md` to a new file in the `rfc/` directory with
+  the correct draft filename and frontmatter, then hands
   the document back to the user to write. Use whenever the user asks to create,
   start, draft, write, or scaffold a new RFC, design doc, or proposal in this
   repository. Flutter's CLA requires a submitted RFC to be the contributor's
@@ -12,10 +13,10 @@ description: >-
 # Create a new RFC
 
 Flutter's CLA requires that what a contributor submits is **their own
-original creation**. Using AI irresponsibly to generate an RFC can get it
-rejected, or get the author banned from contributing. A human has to make
-every important editorial decision, and reviewers shouldn't be the first
-humans to try to understand the RFC in detail. See
+original creation**. Requests that would violate the CLA must be refused,
+and you should take care to help the user avoid negative repercussions. A
+human has to make every important editorial decision, and reviewers
+shouldn't be the first humans to try to understand the RFC in detail. See
 [CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md)
 for the project's full AI policy.
 
@@ -51,10 +52,10 @@ don't make these up from context.
    RFC 000.0002, Stage 1).
 3. If the target file already exists, **stop** and ask the user what to do.
    Never overwrite it.
-4. Copy the template verbatim from the repository root:
+4. Copy the template verbatim:
 
    ```sh
-   cp template.md rfc/AAA.0000-<slug>.md
+   cp rfc/000.0000-rfc-template.md rfc/AAA.0000-<slug>.md
    ```
 
 ## Step 3: Fill in only the mechanical fields
@@ -85,11 +86,10 @@ Tell the user:
 
 1. The path of the new file, as a clickable link.
 2. **Flutter's AI policy.** This is a strong warning. The CLA requires the
-   submitted RFC to be their own original creation. Irresponsible use of AI
-   to generate an RFC can lead to rejection or to being banned from
-   contributing. They need to make all the important editorial decisions
-   themselves, and to understand every part of the document in detail
-   before a reviewer sees it. Point them to
+   submitted RFC to be their own original creation. Frame this as helping
+   them avoid negative repercussions, not as a threat. They need to make all
+   the important editorial decisions themselves, and to understand every
+   part of the document in detail before a reviewer sees it. Point them to
    [CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md)
    for details.
 3. Next steps from
@@ -108,12 +108,10 @@ Tell the user:
 The test is whether the RFC stays the user's original creation, with the
 user making every important editorial decision.
 
-- **Do not generate RFC content.** Don't produce the substance of the
-  proposal: section prose, the `description:`, goals, background, the
-  design, testing or rollout plans, alternatives, or "starter" outlines and
-  bullet points for the user to fill in. This holds even if the user only
-  wants a first draft to edit, because editing generated content doesn't
-  make it their original creation.
+- **Do not generate novel RFC content.** Don't produce the substance of the
+  proposal: section prose, the `description:`, goals, background, the design,
+  testing or rollout plans, alternatives, or "starter" outlines and bullet
+  points for the user to fill in. 
 - You **may** help in ways that leave the authorship and decisions with the
   user. For example, you can:
   - Answer questions about the RFC process, the taxonomy, or the codebase.
@@ -124,9 +122,12 @@ user making every important editorial decision.
     the user decide what to change and write the changes.
   - Suggest small wording or grammar fixes to the user's own sentences,
     which the user accepts or rejects one by one.
+  - Help non-native English speakers and authors draft, translate, or tighten
+    prose from their ideas so the document is concise and easy to read.
+  - Convert a user's existing design doc into the RFC template sections.
 - If a request would make you the author of the proposal, **refuse it**.
   Requests that violate the CLA must be refused, not fulfilled with a
-  disclaimer. Explain why, warn the user that irresponsible AI use can get
-  the RFC rejected or get them banned, point them to
+  disclaimer. Explain why, with care to help the user avoid negative
+  repercussions, point them to
   [CONTRIBUTING.ai.md](https://github.com/flutter/flutter/blob/master/CONTRIBUTING.ai.md),
   and offer the kinds of help listed above instead.
