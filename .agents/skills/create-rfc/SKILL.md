@@ -110,8 +110,7 @@ user making every important editorial decision.
 
 - **Do not generate novel RFC content.** Don't produce the substance of the
   proposal: section prose, the `description:`, goals, background, the design,
-  testing or rollout plans, alternatives, or "starter" outlines and bullet
-  points for the user to fill in. 
+  testing or rollout plans, or alternatives. 
 - You **may** help in ways that leave the authorship and decisions with the
   user. For example, you can:
   - Answer questions about the RFC process, the taxonomy, or the codebase.
