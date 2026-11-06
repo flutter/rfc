@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" font-family="Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="14">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#fff8ee"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8d7a8" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="470" fill="#ffffff"/>
+
+  <!-- Left panel: what the user sees -->
+  <text x="30" y="34" font-size="16" font-weight="bold" fill="#202124">What the user sees</text>
+  <rect x="30" y="50" width="380" height="300" rx="6" fill="#cfe3fb" stroke="#4a7fc1" stroke-width="2"/>
+  <text x="44" y="74" fill="#1f4e8c" font-weight="bold">Platform view 1 (PV1): a map iframe</text>
+  <!-- barrier -->
+  <rect x="30" y="50" width="380" height="300" rx="6" fill="#000000" fill-opacity="0.38"/>
+  <text x="44" y="336" fill="#ffffff">Modal barrier (Flutter pixels)</text>
+  <!-- dialog -->
+  <rect x="105" y="105" width="230" height="190" rx="10" fill="#ffffff" stroke="#9aa0a6" stroke-width="1.5"/>
+  <text x="121" y="131" fill="#202124" font-weight="bold">Dialog (Flutter pixels)</text>
+  <rect x="135" y="150" width="170" height="110" rx="4" fill="#cfe3fb" stroke="#4a7fc1" stroke-width="2"/>
+  <text x="147" y="174" fill="#1f4e8c" font-weight="bold">PV2: a video iframe</text>
+  <text x="147" y="194" fill="#1f4e8c">inside the dialog</text>
+  <!-- tap markers -->
+  <circle cx="70" cy="125" r="13" fill="#d93025"/>
+  <text x="70" y="130" fill="#ffffff" font-weight="bold" text-anchor="middle">A</text>
+  <circle cx="220" cy="232" r="13" fill="#188038"/>
+  <text x="220" y="237" fill="#ffffff" font-weight="bold" text-anchor="middle">B</text>
+  <text x="30" y="380" fill="#202124"><tspan font-weight="bold" fill="#d93025">A</tspan>: tap on the barrier. Should close the dialog.</text>
+  <text x="30" y="402" fill="#202124"><tspan font-weight="bold" fill="#188038">B</tspan>: tap on PV2. Should reach the video.</text>
+
+  <!-- Right panel: DOM order -->
+  <text x="480" y="34" font-size="16" font-weight="bold" fill="#202124">Elements inside &lt;flt-scene&gt;, bottom to top</text>
+  <text x="480" y="54" font-size="13" fill="#5f6368">Later elements are on top. The browser sends a click to the topmost</text>
+  <text x="480" y="71" font-size="13" fill="#5f6368">element that accepts it. Flutter's canvases don't accept clicks.</text>
+
+  <!-- stack: y from bottom (5) to top (1); top box at y=90 -->
+  <!-- 5: canvas above PV2 (top) -->
+  <rect x="480" y="88" width="300" height="46" rx="5" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.5"/>
+  <text x="494" y="116" fill="#3c4043">Canvas: content painted above PV2</text>
+  <!-- 4: PV2 -->
+  <rect x="480" y="146" width="300" height="46" rx="5" fill="#cfe3fb" stroke="#4a7fc1" stroke-width="2"/>
+  <text x="494" y="174" fill="#1f4e8c" font-weight="bold">PV2 (video iframe)</text>
+  <!-- 3: canvas with barrier + dialog -->
+  <rect x="480" y="204" width="300" height="46" rx="5" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.5"/>
+  <text x="494" y="232" fill="#3c4043">Canvas: barrier and dialog pixels</text>
+  <!-- 2: proxy -->
+  <rect x="480" y="262" width="300" height="56" rx="5" fill="url(#hatch)" stroke="#e37400" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="494" y="285" fill="#8a4b00" font-weight="bold">New: hit-test proxy for PV1</text>
+  <text x="494" y="305" fill="#8a4b00" font-size="13">covers the barrier and the dialog</text>
+  <!-- 1: PV1 (bottom) -->
+  <rect x="480" y="330" width="300" height="46" rx="5" fill="#cfe3fb" stroke="#4a7fc1" stroke-width="2"/>
+  <text x="494" y="358" fill="#1f4e8c" font-weight="bold">PV1 (map iframe)</text>
+
+  <!-- top/bottom labels -->
+  <text x="790" y="104" font-size="12" fill="#5f6368">top</text>
+  <text x="790" y="368" font-size="12" fill="#5f6368">bottom</text>
+  <line x1="800" y1="112" x2="800" y2="352" stroke="#9aa0a6" stroke-width="1.5" marker-start="url(#arrow)"/>
+
+  <!-- outcomes -->
+  <circle cx="842" cy="290" r="11" fill="#d93025"/>
+  <text x="842" y="295" fill="#ffffff" font-weight="bold" text-anchor="middle" font-size="13">A</text>
+  <line x1="830" y1="290" x2="786" y2="290" stroke="#d93025" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="858" y="286" font-size="12" fill="#202124">lands on the</text>
+  <text x="858" y="301" font-size="12" fill="#202124">proxy, so Flutter</text>
+  <text x="858" y="316" font-size="12" fill="#202124">gets it</text>
+
+  <circle cx="842" cy="169" r="11" fill="#188038"/>
+  <text x="842" y="174" fill="#ffffff" font-weight="bold" text-anchor="middle" font-size="13">B</text>
+  <line x1="830" y1="169" x2="786" y2="169" stroke="#188038" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="858" y="165" font-size="12" fill="#202124">lands on PV2,</text>
+  <text x="858" y="180" font-size="12" fill="#202124">which is above</text>
+  <text x="858" y="195" font-size="12" fill="#202124">the proxy</text>
+
+  <text x="480" y="410" font-size="13" fill="#5f6368">Without the proxy, tap A falls through the canvas to PV1.</text>
+  <text x="480" y="428" font-size="13" fill="#5f6368">A single proxy on top of everything would also block tap B.</text>
+</svg>
