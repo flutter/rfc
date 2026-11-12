@@ -32,6 +32,75 @@ Before you get started, we encourage you to read these documents which describe 
 2. [Values](./docs/about/Values.md),
    which talks about what we care most about.
 
+Media and Git LFS
+-----------------
+
+Use [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams) (`mermaid` code blocks) or ASCII art for architecture, sequence, and state diagrams. When those formats are insufficient, prefer non-binary `.svg` graphics over binary images, and use binary images only for rendered screenshots. Store all graphics and screenshots in `rfc/media/`.
+
+Plain-text `.svg` files are tracked directly by Git. Binary media files (`.png`, `.jpg`, `.gif`, `.webp`, `.mp4`, `.pdf`, and others listed in [`.gitattributes`](.gitattributes)) must be stored with Git Large File Storage (Git LFS). CI blocks pull requests that commit raw binary blobs instead of LFS pointers.
+
+### 1. Install Git LFS
+
+Install the `git-lfs` client for your operating system, then run `git lfs install` once per user account to register Git's smudge and clean filters.
+
+#### macOS
+
+```sh
+brew install git-lfs
+git lfs install
+```
+
+#### Windows
+
+Git LFS ships by default with [Git for Windows](https://gitforwindows.org/). If it is not installed, install it with WinGet and restart your terminal so `PATH` updates:
+
+```powershell
+winget install --id GitHub.GitLFS -e
+git lfs install
+```
+
+#### Linux
+
+```sh
+# Debian / Ubuntu
+sudo apt update && sudo apt install git-lfs
+
+# Fedora / RHEL
+sudo dnf install git-lfs
+
+# Arch Linux
+sudo pacman -S git-lfs
+
+git lfs install
+```
+
+Homebrew on Linux (`brew install git-lfs`) is also supported. Verify the installation with `git lfs version`. If you cloned this repository before installing Git LFS, run `git lfs pull` to download existing media assets.
+
+### 2. Add screenshots to an RFC
+
+[`.gitattributes`](.gitattributes) already configures LFS patterns for this repository, so you do not need to run `git lfs track`.
+
+1. Save screenshots in `rfc/media/` using lowercase kebab-case names (for example, `rfc/media/impeller-glyph-atlas.png`).
+2. Reference them with a relative path from your RFC in `rfc/` (for example, `![Glyph atlas debug view](media/impeller-glyph-atlas.png)`).
+3. Stage and commit as usual, then verify LFS pointer tracking locally with [`bin/lfs_verify.dart`](bin/lfs_verify.dart):
+
+```sh
+git add rfc/media/impeller-glyph-atlas.png
+git lfs ls-files
+dart pub get
+dart run bin/lfs_verify.dart --base-branch main
+```
+
+### 3. Fix files committed without Git LFS
+
+If you committed a binary file before running `git lfs install`, CI (`bin/lfs_verify.dart`) will fail. Because this repository squash-merges pull requests, you can fix the branch tip without rewriting history:
+
+```sh
+git lfs install
+git add --renormalize .
+git commit -m "chore: serialize media files with Git LFS"
+```
+
 Helping out in the issue database
 ---------------------------------
 
