@@ -1,0 +1,340 @@
+{
+  "openapi": "3.2.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Partner On-Demand Status Endpoint",
+    "version": "v1",
+    "description": "OpenAPI specification for the optional partner-hosted on-demand status endpoint (<partner_status_url>). Used by Cocoon to query the current execution status of a CI run (uid) on demand when a user manually requests a status refresh on the Flutter build dashboard while waiting for results."
+  },
+  "servers": [
+    {
+      "url": "https://{partner_host}",
+      "description": "Partner CI HTTPS server (must use https:// and resolve to a public IP address).",
+      "variables": {
+        "partner_host": {
+          "default": "partner-ci.example.com",
+          "description": "Public hostname of the Partner CI server."
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "cocoonBearerJwt": []
+    }
+  ],
+  "paths": {
+    "/status": {
+      "get": {
+        "operationId": "getPartnerTaskStatus",
+        "summary": "Query Partner CI Execution Status",
+        "description": "Queries the current execution status of a CI run identified by uid. Authenticated via an Ed25519-signed Bearer JWT from Cocoon. Must respond within 30 seconds with a maximum response body size of 768 KB. Because the Flutter build dashboard is public, message summaries and details[].url links MUST NOT contain PII, internal hostnames, or confidential partner secrets.",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "query",
+            "required": true,
+            "description": "Unique correlation identifier for the CI execution request (must match data.uid in the Bearer JWT payload).",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "example": "0sAtLhwbmGz2Y0WBDzPL"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status retrieved successfully. Cocoon updates the task state on the dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerStatusResponse"
+                },
+                "example": {
+                  "status": "in_progress",
+                  "message": "Running test suites on hardware pool A",
+                  "details": [
+                    {
+                      "name": "device_1_test_suite_1",
+                      "status": "in_progress",
+                      "url": "https://partner-ci.example.com/device_1_test_suite_1/log"
+                    },
+                    {
+                      "name": "device_1_test_suite_2",
+                      "status": "succeeded",
+                      "url": "https://partner-ci.example.com/device_1_test_suite_2/log"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request — malformed request (e.g., missing uid parameter). Logged as error; surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication error (e.g., invalid or expired Bearer JWT). Logged as error; surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — caller is not authorized. Logged as error; surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found — uid not found in the partner CI system. Logged as warning; surfaces uid not found to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request Timeout — logged as error; surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests — rate limit exceeded; logged as error and surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server Error — logged as error; surfaces failure to dashboard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cocoonBearerJwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Ed25519-signed Bearer JWT issued by Cocoon. The decoded JWT header conforms to #/components/schemas/JwtHeader and the decoded JWT payload conforms to #/components/schemas/PartnerStatusJwtPayload."
+      }
+    },
+    "schemas": {
+      "JwtHeader": {
+        "title": "Decoded JWT Header",
+        "description": "JWS header parameters for Ed25519-signed tokens.",
+        "type": "object",
+        "required": [
+          "alg",
+          "typ",
+          "kid"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "alg": {
+            "type": "string",
+            "const": "EdDSA",
+            "description": "Cryptographic signing algorithm. Must be 'EdDSA' (Ed25519 per RFC 8037)."
+          },
+          "typ": {
+            "type": "string",
+            "const": "JWT",
+            "description": "Token media type. Must be 'JWT'."
+          },
+          "kid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Key ID identifying the Ed25519 public key in Cocoon's JWKS endpoint."
+          }
+        }
+      },
+      "PartnerStatusJwtPayload": {
+        "title": "Decoded Partner Status Bearer JWT Payload (v1)",
+        "description": "Decoded Bearer JWT claims sent by Cocoon in the Authorization header of GET <partner_status_url>?uid=<uid>.",
+        "type": "object",
+        "required": [
+          "iss",
+          "aud",
+          "iat",
+          "exp",
+          "version",
+          "data"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "iss": {
+            "type": "string",
+            "const": "cocoon",
+            "description": "Issuer claim identifying Cocoon as the caller."
+          },
+          "aud": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "description": "Audience claim matching the partner_status_url."
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Issued At timestamp (Unix epoch seconds)."
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Expiration timestamp (Unix epoch seconds)."
+          },
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "description": "API schema version of the payload."
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "uid"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "uid": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Unique correlation identifier for the CI execution request (matches the uid query parameter)."
+              }
+            }
+          }
+        },
+        "examples": [
+          {
+            "iss": "cocoon",
+            "aud": "https://partner-ci.example.com/status",
+            "iat": 1774962600,
+            "exp": 1774962900,
+            "version": "v1",
+            "data": {
+              "uid": "0sAtLhwbmGz2Y0WBDzPL"
+            }
+          }
+        ]
+      },
+      "PartnerStatusResponse": {
+        "title": "Partner On-Demand Status Response (v1)",
+        "description": "Current CI execution status returned by GET <partner_status_url>?uid=<uid>.",
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional Markdown-formatted summary of the CI run. Must not contain PII, internal hostnames, or confidential partner secrets."
+          },
+          "details": {
+            "type": "array",
+            "description": "Granular test suite execution details.",
+            "items": {
+              "$ref": "#/components/schemas/StatusDetail"
+            }
+          }
+        }
+      },
+      "StatusDetail": {
+        "title": "Test Suite Execution Detail",
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "url"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the test suite or device target."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "description": "Publicly accessible HTTPS URL for test execution logs or details. Must not contain PII, internal hostnames, or confidential partner secrets."
+          }
+        }
+      },
+      "ExecutionStatus": {
+        "title": "Execution Status",
+        "type": "string",
+        "enum": [
+          "in_progress",
+          "succeeded",
+          "neutral",
+          "skipped",
+          "failed",
+          "infra_failure",
+          "cancelled"
+        ],
+        "description": "Allowed non-terminal (in_progress) and terminal execution status values."
+      },
+      "ErrorResponse": {
+        "title": "Error Response",
+        "description": "Standard JSON error response body returned on HTTP 4xx and 5xx responses.",
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable error description."
+          }
+        },
+        "examples": [
+          {
+            "message": "Human-readable error description"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,311 @@
+{
+  "openapi": "3.2.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Partner Webhook Listener Endpoint",
+    "version": "v1",
+    "description": "OpenAPI specification for the partner-hosted webhook listener endpoint (<partner_webhook_url>). Used by Cocoon to trigger asynchronous partner CI test execution with a unique correlation ID (uid) and commit context (sha, branch, pr, slug) when a PR is merged into a configured branch on flutter/flutter or when a task re-run is requested."
+  },
+  "servers": [
+    {
+      "url": "https://{partner_host}",
+      "description": "Partner CI HTTPS server (must use https:// and resolve to a public IP address).",
+      "variables": {
+        "partner_host": {
+          "default": "partner-ci.example.com",
+          "description": "Public hostname of the Partner CI server."
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/webhook": {
+      "post": {
+        "operationId": "postPartnerWebhook",
+        "summary": "Trigger Partner CI Execution",
+        "description": "Receives a raw Ed25519-signed JWT from Cocoon to enqueue an asynchronous CI run. The partner verifies the JWT signature using Cocoon's JWKS endpoint, enqueues the CI job, and returns 200 OK within 30 seconds (max 64 KB response body). Cocoon retries with exponential backoff (60s to 600s, up to 10 attempts) on timeouts, 408, 429, or 5xx responses.",
+        "requestBody": {
+          "required": true,
+          "description": "Raw Ed25519-signed JWT in JWS Compact Serialization (<Base64Url JWT Header>.<Base64Url JWT Payload>.<Base64Url Signature>). The decoded JWT header conforms to #/components/schemas/JwtHeader and the decoded JWT payload conforms to #/components/schemas/PartnerWebhookJwtPayload.",
+          "content": {
+            "application/jwt": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedJwt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook accepted and CI execution queued. Cocoon acknowledges dispatch and does not retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request — client error, malformed JWT, or unrecognized version. Logged as error by Cocoon; no retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — invalid JWT signature, unknown kid, or expired token. Logged as error by Cocoon; no retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — authentication/authorization error. Logged as error by Cocoon; no retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found — endpoint or resource not found. Logged as error by Cocoon; no retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request Timeout — temporary timeout. Cocoon retries with exponential backoff (60s–600s, up to 10 attempts).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — uid was already received/processed by the partner. Logged as warning by Cocoon; acknowledges dispatch without retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests — temporary rate limit or overload. Cocoon retries with exponential backoff (60s–600s, up to 10 attempts).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server Error — temporary partner server failure. Cocoon retries with exponential backoff (60s–600s, up to 10 attempts).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SignedJwt": {
+        "title": "Signed JWT (JWS Compact Serialization)",
+        "description": "Compact JWS string (<Base64Url Header>.<Base64Url Payload>.<Base64Url Signature>) signed with Ed25519 (alg: EdDSA). See JwtHeader and PartnerWebhookJwtPayload for the decoded JSON structures.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+      },
+      "JwtHeader": {
+        "title": "Decoded JWT Header",
+        "description": "JWS header parameters for Ed25519-signed tokens.",
+        "type": "object",
+        "required": [
+          "alg",
+          "typ",
+          "kid"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "alg": {
+            "type": "string",
+            "const": "EdDSA",
+            "description": "Cryptographic signing algorithm. Must be 'EdDSA' (Ed25519 per RFC 8037)."
+          },
+          "typ": {
+            "type": "string",
+            "const": "JWT",
+            "description": "Token media type. Must be 'JWT'."
+          },
+          "kid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Key ID identifying the Ed25519 public key in Cocoon's JWKS endpoint."
+          }
+        },
+        "examples": [
+          {
+            "alg": "EdDSA",
+            "typ": "JWT",
+            "kid": "cocoon-key-2026-10"
+          }
+        ]
+      },
+      "PartnerWebhookJwtPayload": {
+        "title": "Decoded Partner Webhook JWT Payload (v1)",
+        "description": "Decoded JWT claims sent by Cocoon in POST <partner_webhook_url> requests.",
+        "type": "object",
+        "required": [
+          "iss",
+          "aud",
+          "iat",
+          "exp",
+          "version",
+          "data"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "iss": {
+            "type": "string",
+            "const": "cocoon",
+            "description": "Issuer claim identifying Cocoon as the caller."
+          },
+          "aud": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "description": "Audience claim matching the exact target partner_webhook_url."
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Issued At timestamp (Unix epoch seconds)."
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Expiration timestamp (Unix epoch seconds)."
+          },
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "description": "API schema version of the payload. Partner parsers must fail on unrecognized versions."
+          },
+          "data": {
+            "$ref": "#/components/schemas/PartnerWebhookData"
+          }
+        },
+        "examples": [
+          {
+            "iss": "cocoon",
+            "aud": "https://partner-ci.example.com/webhook",
+            "iat": 1774962000,
+            "exp": 1774962300,
+            "version": "v1",
+            "data": {
+              "uid": "0sAtLhwbmGz2Y0WBDzPL",
+              "slug": "flutter/flutter",
+              "branch": "master",
+              "pr": 12345,
+              "sha": "6f0f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b"
+            }
+          }
+        ]
+      },
+      "PartnerWebhookData": {
+        "title": "Partner Webhook Event Data",
+        "description": "Post-submit commit context and unique execution identifier. Partner parsers must ignore unrecognized fields in data.",
+        "type": "object",
+        "required": [
+          "uid",
+          "slug",
+          "branch",
+          "pr",
+          "sha"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "uid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique correlation identifier generated by Cocoon for this CI run (a new uid is generated on task re-runs)."
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[^/]+/[^/]+$",
+            "description": "Target GitHub repository identifier (e.g., 'flutter/flutter')."
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Target Git branch name (e.g., 'master', 'main', 'stable')."
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Pull Request number associated with the post-submit commit."
+          },
+          "sha": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{40}$",
+            "description": "40-character hexadecimal Git commit SHA."
+          }
+        }
+      },
+      "AckResponse": {
+        "title": "Acknowledgment Response",
+        "description": "Empty JSON object returned on HTTP 200 OK.",
+        "type": "object",
+        "maxProperties": 0,
+        "additionalProperties": false,
+        "examples": [
+          {}
+        ]
+      },
+      "ErrorResponse": {
+        "title": "Error Response",
+        "description": "Standard JSON error response body returned on HTTP 4xx and 5xx responses.",
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable error description."
+          }
+        },
+        "examples": [
+          {
+            "message": "Human-readable error description"
+          }
+        ]
+      }
+    }
+  }
+}
