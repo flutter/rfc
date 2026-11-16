@@ -376,6 +376,7 @@ Passing `RenderParagraph` directly to plugins would allow plugins to corrupt lay
 
 ```dart
 class TextDelegate extends ChangeNotifier implements Comparable<TextDelegate> {
+  @internal
   final RenderBox renderObject;
   final TextPlugin plugin;
 
@@ -419,10 +420,9 @@ Finally, `TextDelegate` provides coordinate conversion and scrolling helpers: `l
 
 Everything else is a getter or a geometry query. Because each plugin has its own delegate for a text, a plugin cannot reach the painters of another plugin.
 
-Two limits of the prototype, both listed in [Section 11](#11-open-questions):
+`TextDelegate.renderObject` is marked `@internal`. It is for the framework only, because a plugin could cast it and change the text through it. A plugin that uses it gets an analyzer warning. None of the stage 1 plugins use it.
 
-- `TextDelegate.renderObject` is public. A plugin could cast it and change the text through it, which defeats the read-only intent.
-- `TextDelegate.text` leaves `TextSpan.semanticsLabel` out so that offsets match what is painted. A plugin that wants the labels reads `delegate.textSpan` and calls `getSemanticsInformation()`. None of the stage 1 plugins need this.
+One limit of the prototype: `TextDelegate.text` leaves `TextSpan.semanticsLabel` out so that offsets match what is painted. A plugin that wants the labels reads `delegate.textSpan` and calls `getSemanticsInformation()`. None of the stage 1 plugins need this.
 
 A plugin never gets a delegate for a password field ([Section 7.13](#713-obscured-text-fields-are-never-given-to-a-plugin)).
 
@@ -1380,7 +1380,16 @@ The callbacks run after layout and before paint. In a callback, a plugin may:
 
 A plugin must not mark anything as needing layout, and must not call `setState` or notify widgets synchronously. A plugin that has to tell widgets about a change postpones that to after the frame, as `SearchInPagePlugin` does ([Section 7.1](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose)).
 
-The prototype does not enforce this yet. Whether to add an assertion is open ([Section 11](#11-open-questions)).
+Both rules are checked in debug mode:
+
+| A plugin does this in a callback | What happens |
+| :--- | :--- |
+| Marks a render object as needing layout | The framework throws "A … was mutated during a post-layout callback". The message names the render object and says what a callback may do. This check is new in this proposal |
+| Calls `setState`, or notifies a widget right away | Flutter's existing check throws "Build scheduled during frame" |
+
+The new check is in `PipelineOwner`. While an owner runs its post-layout callbacks, marking one of its render objects as needing layout is an error. Without the check, the mistake showed up later in the frame as an unrelated assertion, or not at all, and the render object stayed dirty.
+
+A scroll with no animation can count as a layout change. A `ListView` or `CustomScrollView` lays out again when its offset changes, so jumping it from a callback is an error. A `SingleChildScrollView` only repaints, so that is allowed. A plugin that has to scroll or change layout does it after the frame, for example in a post-frame callback. `SearchInPagePlugin` only scrolls when the user moves to another match, which is outside a frame.
 
 **Timing with several pipeline owners.** A `PipelineOwner` runs its post-layout callbacks at the end of its own `flushLayout`, which is after its child owners have flushed theirs. Inside a callback, the layout of that owner and of everything below it is final. A child owner runs its own callbacks at the end of its own flush.
 
@@ -1593,15 +1602,13 @@ For stage 1:
 
 | # | Question | Where |
 | :--- | :--- | :--- |
-| 1 | Should `TextDelegate.renderObject` be hidden, so that the delegate is read-only in fact and not only by convention? | [3.3](#33-textdelegate-proxy-for-text-render-objects) |
-| 2 | Should the framework publish reference values for `paintOrder`? | [3.4](#34-textpluginscope-and-hierarchical-merging) |
-| 3 | Should the post-layout callback assert that a plugin does not dirty layout? | [7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
-| 4 | Per-owner `schedulePostLayoutCallback`, or a binding-level callback once per frame? | [7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
-| 5 | Covered routes are left out. Should a kept-alive tab, a hidden `IndexedStack` child and an `Offstage` child be left out too? | [7.14](#714-text-that-is-mounted-but-not-visible) |
-| 6 | `ensureVisible` for a range inside a scrolled text field | [7.15](#715-a-match-inside-a-scrolled-text-field) |
-| 7 | The benchmarks that are owed | [3.8](#38-performance) |
-| 8 | Where `SearchInPagePlugin` lives in the framework | [3.6](#36-first-party-searchinpageplugin-implementation) |
-| 9 | Spell check as a first-party text plugin: `flutter/flutter` or `flutter/packages`? | [2.2](#22-built-in-framework-plugins-versus-community-packages) |
+| 1 | Should the framework publish reference values for `paintOrder`? | [3.4](#34-textpluginscope-and-hierarchical-merging) |
+| 2 | Per-owner `schedulePostLayoutCallback`, or a binding-level callback once per frame? | [7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
+| 3 | Covered routes are left out. Should a kept-alive tab, a hidden `IndexedStack` child and an `Offstage` child be left out too? | [7.14](#714-text-that-is-mounted-but-not-visible) |
+| 4 | `ensureVisible` for a range inside a scrolled text field | [7.15](#715-a-match-inside-a-scrolled-text-field) |
+| 5 | The benchmarks that are owed | [3.8](#38-performance) |
+| 6 | Where `SearchInPagePlugin` lives in the framework | [3.6](#36-first-party-searchinpageplugin-implementation) |
+| 7 | Spell check as a first-party text plugin: `flutter/flutter` or `flutter/packages`? | [2.2](#22-built-in-framework-plugins-versus-community-packages) |
 
 For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#94-known-defects-and-open-problems) and [Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed).
 
@@ -1613,7 +1620,7 @@ For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#
 
 | Claim | Branch | How |
 | :--- | :--- | :--- |
-| The stage 1 framework tests pass (21 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
+| The stage 1 framework tests pass (24 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
 | An obscured `EditableText` is not registered with any plugin | `text-plugin-mvp` | Ran |
 | The order of the lifecycle callbacks ([Section 3.2](#32-textplugin-lifecycle-contract)) | `text-plugin-mvp` | Read, in all three hosts. The lifecycle tests ran |
 | Painting order and clipping ([Section 3.5](#35-renderparagraph-and-rendereditable-painting-and-z-order-pipeline)) | `text-plugin-mvp` | Read. The paint-order tests ran |
