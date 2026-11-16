@@ -311,7 +311,7 @@ class _ArticlePageState extends State<ArticlePage> {
 | Layer | File | Public Symbols | Responsibility |
 | :--- | :--- | :--- | :--- |
 | **Rendering** | `packages/flutter/lib/src/rendering/text_plugin.dart` | `TextPlugin`, `TextDelegate` | Defines the plugin lifecycle interface (`needsOffscreenContent`, `paintOrder`, post-layout callbacks) and the per-plugin `TextDelegate` proxy wrapping `RenderParagraph` or `RenderEditable`. |
-| **Rendering** | [packages/flutter/lib/src/rendering/object.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/object.dart) | `PipelineOwner.schedulePostLayoutCallback` (new, `@internal`) | Flushes post-layout callbacks at the end of `PipelineOwner.flushLayout()` after all dirty `RenderObject`s have completed layout and before `flushPaint()`. |
+| **Rendering** | [packages/flutter/lib/src/rendering/binding.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/binding.dart) | `RendererBinding.addPostLayoutCallback` (new, `@internal`), `RendererBinding.flushPostLayoutCallbacks` (new, `@protected`) | Runs post-layout callbacks once per frame in `drawFrame`, after the root pipeline owner has flushed layout and before paint. |
 | **Rendering** | [packages/flutter/lib/src/rendering/paragraph.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/paragraph.dart) | `RenderParagraph.textPlugins` | Reconciles delegates, schedules post-layout lifecycle callbacks, and executes painters for static text. |
 | **Rendering** | [packages/flutter/lib/src/rendering/editable.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/editable.dart) | `RenderEditable.textPlugins` | Reconciles delegates, schedules post-layout lifecycle callbacks during typing and layout, and executes painters for editable text fields. |
 | **Widgets** | `packages/flutter/lib/src/widgets/text_plugin.dart` | `TextPluginScope`, `TextPluginSuspension` (new, `@internal`) | Scopes, deduplicates by `Type`, and sorts `TextPlugin`s by `paintOrder` down the widget tree, and configures `OffscreenContentRenderingStrategy` when any active plugin has `needsOffscreenContent == true`. `TextPluginSuspension` withholds plugins from text that is mounted but covered ([Section 7.14](#714-text-that-is-mounted-but-not-visible)). |
@@ -349,7 +349,7 @@ Plugins often need to query word boxes (`getBoxesForSelection`) or screen positi
 - **Before or during layout is too early:** Sizes and parent offsets are not finalized yet, so geometry queries crash or return stale coordinates.
 - **After the frame (`addPostFrameCallback`) is too late:** The frame has already painted, causing a 1-frame flash of unhighlighted (or unmasked) text.
 
-To hit the exact sweet spot **after layout finishes and before paint starts**, `RenderParagraph` and `RenderEditable` schedule these callbacks at the end of `PipelineOwner.flushLayout()` via `PipelineOwner.schedulePostLayoutCallback` (see [Section 7.2](#72-why-didaddtext-didupdatetext-and-didlayouttext-are-flushed-post-layout) for pipeline details). Every glyph box and screen coordinate is ready (`delegate.hasLayout == true`), and any `backgroundPainter` or `foregroundPainter` set in the callback paints in the **same frame**:
+To hit the exact sweet spot **after layout finishes and before paint starts**, `RenderParagraph` and `RenderEditable` schedule these callbacks with `RendererBinding.addPostLayoutCallback`, which runs them once per frame after layout has been flushed (see [Section 7.2](#72-why-didaddtext-didupdatetext-and-didlayouttext-are-flushed-post-layout) for pipeline details). Every glyph box and screen coordinate is ready (`delegate.hasLayout == true`), and any `backgroundPainter` or `foregroundPainter` set in the callback paints in the **same frame**:
 
 1. **`didAddText(delegate)`**: Fires once after a new `(RenderObject, TextPlugin)` pair finishes its first layout.
 2. **`didUpdateText(delegate)`**: Fires post-layout when the text or span styles changed.
@@ -463,7 +463,7 @@ class RenderParagraph extends RenderBox { // Same host contract on RenderEditabl
   @override
   void performLayout() {
     _layoutTextWithConstraints(constraints);
-    owner?.schedulePostLayoutCallback(_flushTextPluginNotifications);
+    RendererBinding.instance.addPostLayoutCallback(_flushTextPluginNotifications);
   }
 
   @override
@@ -577,7 +577,7 @@ Instead of looping over all mounted `_delegates` on every update or match naviga
 
 #### 3.6.4 Post-layout scrolling and safe notification coalescing
 
-Because `didAddText`, `didUpdateText`, and `didLayoutText` run at the end of `PipelineOwner.flushLayout()`, `delegate.hasLayout` is already `true` whenever a delegate is added or updated:
+Because `didAddText`, `didUpdateText`, and `didLayoutText` run after layout has been flushed for the frame, `delegate.hasLayout` is already `true` whenever a delegate is added or updated:
 
 1. Calling `scrollToActiveMatch()` from `nextMatch()` or `previousMatch()` can immediately invoke `current.delegate.ensureVisible(current.range, duration: duration, curve: curve)` because every delegate in `_matches` has already completed layout. The scroll is animated: `scrollToActiveMatch` defaults to 250 ms with `Curves.easeInOut` and passes both to `ensureVisible`. A match that is scrolled out of view inside a multi-line text field is a known gap (see [Section 7.15](#715-a-match-inside-a-scrolled-text-field)).
 
@@ -1177,7 +1177,7 @@ Below are the corner cases identified during design, prototyping and review, alo
 
 Suppose a search bar widget at the top of the screen listens to `SearchInPagePlugin` (`ChangeNotifier`) via `ListenableBuilder` to display a match counter such as `"1 of 5 matches"`.
 
-When the user scrolls a `ListView` and a new `Text` item mounts on screen, `PipelineOwner.flushLayout()` invokes `searchPlugin.didAddText(delegate)` while Flutter is in the middle of laying out the frame (`SchedulerPhase.persistentCallbacks`). Inside `didAddText`, `SearchInPagePlugin` scans the new paragraph and finds a sixth match (`"1 of 6 matches"`).
+When the user scrolls a `ListView` and a new `Text` item mounts on screen, `searchPlugin.didAddText(delegate)` is called while Flutter is in the middle of producing the frame, right after layout (`SchedulerPhase.persistentCallbacks`). Inside `didAddText`, `SearchInPagePlugin` scans the new paragraph and finds a sixth match (`"1 of 6 matches"`).
 
 If `SearchInPagePlugin` calls `notifyListeners()` synchronously inside `didAddText` (or inside `didUpdateText`, `didLayoutText`, or `didRemoveText`), the search bar widget will call `setState()` while Flutter is still building or laying out the widget tree. Flutter then throws a `setState() or markNeedsBuild() called during build` assertion error.
 
@@ -1200,7 +1200,7 @@ In an early iteration of the prototype, `didAddText` ran synchronously inside `a
 To solve all four issues:
 
 1. `TextDelegate` tracks a dedicated `_hasValidLayout` boolean (set to `false` in `markNeedsLayout()` and `true` at the end of `performLayout()`), so `delegate.hasLayout` is accurate in both debug and release builds.
-2. `RenderParagraph` and `RenderEditable` schedule `didAddText`, `didUpdateText`, and `didLayoutText` via `PipelineOwner.schedulePostLayoutCallback`, which flushes at the end of `PipelineOwner.flushLayout()` after all dirty `RenderObject`s have exited `layout()` and finalized parent offsets, and right before `PipelineOwner.flushPaint()`. A pipeline owner flushes these callbacks after its child pipeline owners have flushed their layout, so the layout of that owner and of everything below it is final (see [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
+2. `RenderParagraph` and `RenderEditable` schedule `didAddText`, `didUpdateText`, and `didLayoutText` with `RendererBinding.addPostLayoutCallback`. The binding runs these callbacks in `drawFrame`, after the root pipeline owner has flushed layout and right before painting. All dirty `RenderObject`s in every render tree have exited `layout()` and finalized parent offsets by then (see [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
 3. As a result, `delegate.hasLayout` is guaranteed to be `true` in all three callbacks (`didAddText`, `didUpdateText`, and `didLayoutText`), all geometry and coordinate queries (`getBoxesForSelection`, `size`, `localToGlobal`) succeed immediately, and painters set in those callbacks paint in the same frame.
 
 ---
@@ -1387,13 +1387,20 @@ Both rules are checked in debug mode:
 | Marks a render object as needing layout | The framework throws "A … was mutated during a post-layout callback". The message names the render object and says what a callback may do. This check is new in this proposal |
 | Calls `setState`, or notifies a widget right away | Flutter's existing check throws "Build scheduled during frame" |
 
-The new check is in `PipelineOwner`. While an owner runs its post-layout callbacks, marking one of its render objects as needing layout is an error. Without the check, the mistake showed up later in the frame as an unrelated assertion, or not at all, and the render object stayed dirty.
+While the binding runs the post-layout callbacks, marking a render object as needing layout is an error. Without the check, the mistake showed up later in the frame as an unrelated assertion, or not at all, and the render object stayed dirty.
 
-A scroll with no animation can count as a layout change. A `ListView` or `CustomScrollView` lays out again when its offset changes, so jumping it from a callback is an error. A `SingleChildScrollView` only repaints, so that is allowed. A plugin that has to scroll or change layout does it after the frame, for example in a post-frame callback. `SearchInPagePlugin` only scrolls when the user moves to another match, which is outside a frame.
+**Scrolling is safe.** Scrolling can change layout: a `ListView` or `CustomScrollView` lays out again when its offset changes. A plugin does not have to think about that. `TextDelegate.ensureVisible` and `TextDelegate.showOnScreen` check whether a frame is being produced. If so, they scroll at the end of that frame, and the result shows in the next one. Otherwise they scroll right away. The scroll is dropped if the text is gone by then.
 
-**Timing with several pipeline owners.** A `PipelineOwner` runs its post-layout callbacks at the end of its own `flushLayout`, which is after its child owners have flushed theirs. Inside a callback, the layout of that owner and of everything below it is final. A child owner runs its own callbacks at the end of its own flush.
+A plugin that has to change layout in some other way does it after the frame, for example in a post-frame callback.
 
-**Alternative considered.** A binding-level `RendererBinding.addPostLayoutCallback`, called once per frame after the root pipeline owner has flushed layout, was suggested in review. It is simpler and runs once per frame instead of once per render tree. The per-owner version is used in the prototype because a text schedules the callback on the owner it is attached to and needs no binding. This choice is open.
+**When the callbacks run.** `RendererBinding.drawFrame` flushes layout for the root pipeline owner, which flushes every child owner, so every render tree of every view is laid out. Then it runs the post-layout callbacks, once. Then it paints. Inside a callback the layout of every render tree is final.
+
+**What this depends on.** The callbacks are run by the binding, not by layout itself. Two consequences:
+
+- A binding that overrides `drawFrame` and flushes layout itself has to call `flushPostLayoutCallbacks()` right after. The test binding in `flutter_test` does this, and was changed for it.
+- A render tree that is laid out by hand, by calling `PipelineOwner.flushLayout()` outside a frame, does not run the callbacks at that point. Its texts are told in the next frame, if they are still attached.
+
+**Alternative considered.** An earlier version of the prototype put the hook on each `PipelineOwner`, which ran its own callbacks at the end of its own `flushLayout`. That covered the two cases above without extra work. It had a weaker guarantee: with several views, the callbacks of one view ran before the next view was laid out. The binding-level hook was suggested in review and is used because it is simpler to state: once per frame, after all layout.
 
 ---
 
@@ -1603,12 +1610,11 @@ For stage 1:
 | # | Question | Where |
 | :--- | :--- | :--- |
 | 1 | Should the framework publish reference values for `paintOrder`? | [3.4](#34-textpluginscope-and-hierarchical-merging) |
-| 2 | Per-owner `schedulePostLayoutCallback`, or a binding-level callback once per frame? | [7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
-| 3 | Covered routes are left out. Should a kept-alive tab, a hidden `IndexedStack` child and an `Offstage` child be left out too? | [7.14](#714-text-that-is-mounted-but-not-visible) |
-| 4 | `ensureVisible` for a range inside a scrolled text field | [7.15](#715-a-match-inside-a-scrolled-text-field) |
-| 5 | The benchmarks that are owed | [3.8](#38-performance) |
-| 6 | Where `SearchInPagePlugin` lives in the framework | [3.6](#36-first-party-searchinpageplugin-implementation) |
-| 7 | Spell check as a first-party text plugin: `flutter/flutter` or `flutter/packages`? | [2.2](#22-built-in-framework-plugins-versus-community-packages) |
+| 2 | Covered routes are left out. Should a kept-alive tab, a hidden `IndexedStack` child and an `Offstage` child be left out too? | [7.14](#714-text-that-is-mounted-but-not-visible) |
+| 3 | `ensureVisible` for a range inside a scrolled text field | [7.15](#715-a-match-inside-a-scrolled-text-field) |
+| 4 | The benchmarks that are owed | [3.8](#38-performance) |
+| 5 | Where `SearchInPagePlugin` lives in the framework | [3.6](#36-first-party-searchinpageplugin-implementation) |
+| 6 | Spell check as a first-party text plugin: `flutter/flutter` or `flutter/packages`? | [2.2](#22-built-in-framework-plugins-versus-community-packages) |
 
 For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#94-known-defects-and-open-problems) and [Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed).
 
@@ -1620,7 +1626,7 @@ For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#
 
 | Claim | Branch | How |
 | :--- | :--- | :--- |
-| The stage 1 framework tests pass (24 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
+| The stage 1 framework tests pass (26 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
 | An obscured `EditableText` is not registered with any plugin | `text-plugin-mvp` | Ran |
 | The order of the lifecycle callbacks ([Section 3.2](#32-textplugin-lifecycle-contract)) | `text-plugin-mvp` | Read, in all three hosts. The lifecycle tests ran |
 | Painting order and clipping ([Section 3.5](#35-renderparagraph-and-rendereditable-painting-and-z-order-pipeline)) | `text-plugin-mvp` | Read. The paint-order tests ran |
