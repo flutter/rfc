@@ -262,7 +262,7 @@ The rules for staging are:
 2. A later stage adds API. It does not change the stage 1 public API. A plugin written for stage 1 keeps working.
 3. A plugin uses the smallest stage that fits. A highlight stays a painter even when widgets are available, because a painter costs the least.
 
-Both experiments are built directly on top of the stage 1 branch as it was on November 11. Stage 1 has changed since then: the post-layout callbacks moved to the binding and `TextDelegate.renderObject` became `@internal` ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The two experiment branches have not been rebased onto that yet. Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
+Both experiments are built directly on top of the current stage 1 branch. They were rebased on November 16, after the post-layout callbacks moved to the binding and `TextDelegate.renderObject` became `@internal` ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
 
 [Section 10](#10-the-same-feature-written-three-ways) shows one feature written in each stage.
 
@@ -1461,7 +1461,7 @@ A plugin that has to change layout in some other way does it after the frame, fo
 ## 8. Stage 2: annotations
 
 > Stage 2 is a future stage. It is **not** part of what this RFC asks to land. It is here to show that interaction can be added on top of stage 1.
-> Branch: [`text-plugin-annotations`](https://github.com/hannah-hyj/flutter/tree/text-plugin-annotations). Live demo: [text-plugin-annotations-demo.web.app](https://text-plugin-annotations-demo.web.app/). The statements in this section come from the design notes and the tests on that branch. They will be checked again after the branch is rebased onto the current stage 1 branch.
+> Branch: [`text-plugin-annotations`](https://github.com/hannah-hyj/flutter/tree/text-plugin-annotations). Live demo: [text-plugin-annotations-demo.web.app](https://text-plugin-annotations-demo.web.app/). Its framework tests and example tests were run for this document on the current stage 1 branch. The statements in this section that no test covers come from the design notes on that branch.
 
 ### 8.1 What it adds
 
@@ -1528,7 +1528,7 @@ Because `TextPlugin` is non-destructive and does not mutate the input `InlineSpa
 ## 9. Stage 3: widgets
 
 > Stage 3 is a future stage. It is **not** part of what this RFC asks to land.
-> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document, on the November 11 stage 1. They will be run again after the branch is rebased onto the current stage 1 branch. The findings about the two example plugins come from the experiment's own report.
+> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document on the current stage 1 branch. The findings about the two example plugins come from the experiment's own report.
 
 ### 9.1 What it adds
 
@@ -1690,8 +1690,8 @@ For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#
 | Text in a covered route is not given to plugins ([Section 7.14](#714-text-that-is-mounted-but-not-visible)) | `text-plugin-mvp` | Ran, and checked by hand in the example app |
 | Kept-alive tabs, `IndexedStack` and `Offstage` are still given to plugins ([Section 7.14](#714-text-that-is-mounted-but-not-visible)) | `text-plugin-mvp` | Read. Not tested |
 | A match inside a scrolled text field is not scrolled into view ([Section 7.15](#715-a-match-inside-a-scrolled-text-field)) | `text-plugin-mvp` | Ran, and checked by hand in the example app |
-| Stage 2 behavior ([Section 8](#8-stage-2-annotations)) | `text-plugin-annotations` | From the design notes and test names on the branch. Tests not run |
+| Stage 2 behavior ([Section 8](#8-stage-2-annotations)) | `text-plugin-annotations` | Ran on the current stage 1: 39 framework tests (the stage 1 tests and `text_annotation_test.dart`) and the 4 example tests. Statements that no test covers are from the design notes |
 | What stages 2 and 3 touch in stage 1 code | Both | Read from the diff against stage 1 |
-| The stage 3 framework tests pass, together with the unchanged stage 1 tests (50 tests) | `text-plugin-with-widget` | Ran on the November 11 stage 1. Not run again since the stage 1 changes of [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
+| The stage 3 framework tests pass, together with the unchanged stage 1 tests (60 tests) | `text-plugin-with-widget` | Ran on the current stage 1 |
 | Stage 3 findings and defects ([Section 9](#9-stage-3-widgets)) | `text-plugin-with-widget` | From the experiment's report |
 | Selection experiment ([Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed)) | `text-plugin-selection` | From the experiment's report. Not run again, and not rebased |
