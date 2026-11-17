@@ -5,7 +5,7 @@ title: Composable Text Plugins in Flutter
 description: Introduces TextPluginScope, TextPlugin, and TextDelegate for composable cross-cutting text inspection and decoration across RenderParagraph and RenderEditable, as the first of three stages.
 status: draft
 created: 2026-10-14T00:00:00Z
-updated: 2026-11-11T00:00:00Z
+updated: 2026-11-16T00:00:00Z
 tags:
   - 170-text-editing-and-selection
   - 120-rendering
@@ -57,6 +57,7 @@ Moving text selection into a plugin was also tried. It is not one of the three s
   - [3.8 Performance](#38-performance)
     - [3.8.1 First measurements](#381-first-measurements)
   - [3.9 What stage 1 cannot do](#39-what-stage-1-cannot-do)
+  - [3.10 How stage 1 lands](#310-how-stage-1-lands)
 - [4. Community package use cases](#4-community-package-use-cases)
   - [4.1 Use cases implemented in the demo app](#41-use-cases-implemented-in-the-demo-app)
   - [4.2 Additional community package ideas](#42-additional-community-package-ideas)
@@ -184,7 +185,7 @@ It is unrelated to a **Flutter plugin**, which is a package that contains platfo
 
 #### Non-goals (current scope)
 
-- We do not aim to build every plugin in the framework. We define the extensible architecture and provide core plugins (`SearchInPagePlugin` and `_SelectionHighlightTextPlugin`), while community packages provide domain-specific plugins.
+- We do not aim to build every plugin in the framework. We define the extensible architecture and provide one core plugin (`SearchInPagePlugin`), while community packages provide domain-specific plugins.
 
 - Non-text widgets (`Image`, `Icon`, custom `RenderBox` subclasses) are not the focus of the initial scope. Section [6.1](#61-custom-textpainter-render-objects-and-non-text-widgets-with-searchable-labels) shows with concrete code how custom `TextPainter` render objects and non-text widgets can participate via `TextDelegateHostMixin`, which the prototype already includes.
 
@@ -208,7 +209,7 @@ Only plugins that implement platform-standard features with zero external depend
 
 1. `SearchInPagePlugin` provides desktop and web `Ctrl+F` search highlighting, sequential match navigation, and viewport offscreen rendering management.
 
-2. `_SelectionHighlightTextPlugin` is a candidate internal plugin for migrating `SelectionArea` and `SelectableRegion` selection highlighting onto the `TextPlugin` pipeline (evaluated in [Section 5.2](#52-should-selection-highlighting-be-a-textplugin)).
+2. `_SelectionHighlightTextPlugin` is a candidate internal plugin for migrating `SelectionArea` and `SelectableRegion` selection highlighting onto the `TextPlugin` pipeline. It is an experiment and not part of this proposal ([Section 5.2](#52-should-selection-highlighting-be-a-textplugin)).
 
 3. Spell check is assumed to become a first-party text plugin later, because it is a default feature of the framework today. This proposal does not move it: spell check keeps decorating the `InlineSpan` until the plugin framework has landed. Whether it would live in `flutter/flutter` or `flutter/packages` is open ([Section 11](#11-open-questions)).
 
@@ -234,11 +235,11 @@ Domain-specific or third-party-dependent features belong in standalone community
 
 #### 2.2.3 Principles for a general-purpose API
 
-The `TextPlugin` API follows four design rules so it can support both core selection and community packages:
+The `TextPlugin` API follows four design rules so it can support both first-party plugins and community packages:
 
 1. `TextDelegate` exposes an opinionated plain-text getter (`text`) and low-level geometry and painting primitives (`getBoxesForSelection`, `getPositionForOffset`, `getWordBoundary`, `getOffsetForCaret`, `backgroundPainter`, and `foregroundPainter`) rather than feature-specific methods.
 
-2. `TextPluginScope` stacks plugins across the widget tree, deduplicating by plugin `Type` (so inner scopes can override outer scopes of the same `Type`, matching `Actions` and `Shortcuts`) and sorting by `TextPlugin.paintOrder`. `TextPluginScope.exclude(types: {...})` lets app developers filter out specific plugin types on UI chrome without disabling core plugins like `_SelectionHighlightTextPlugin`.
+2. `TextPluginScope` stacks plugins across the widget tree, deduplicating by plugin `Type` (so inner scopes can override outer scopes of the same `Type`, matching `Actions` and `Shortcuts`) and sorting by `TextPlugin.paintOrder`. `TextPluginScope.exclude(types: {...})` lets app developers filter out specific plugin types on UI chrome without disabling the others.
 
 3. `bool get needsOffscreenContent` on `TextPlugin` and the standalone `OffscreenContentRenderingStrategy` widget (`OffscreenRenderingPolicy.lazy()` versus `OffscreenRenderingPolicy.eager({ScrollCacheExtent cacheExtent})`) let document-wide plugins request eager offscreen sliver rendering in `ListView.builder` viewports while allowing subtrees to customize or bound the offscreen `ScrollCacheExtent`. This keeps `Viewport` decoupled from `TextPluginScope`.
 
@@ -261,7 +262,7 @@ The rules for staging are:
 2. A later stage adds API. It does not change the stage 1 public API. A plugin written for stage 1 keeps working.
 3. A plugin uses the smallest stage that fits. A highlight stays a painter even when widgets are available, because a painter costs the least.
 
-Both experiments are built directly on top of the stage 1 branch. Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
+Both experiments are built directly on top of the stage 1 branch as it was on November 11. Stage 1 has changed since then: the post-layout callbacks moved to the binding and `TextDelegate.renderObject` became `@internal` ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The two experiment branches have not been rebased onto that yet. Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
 
 [Section 10](#10-the-same-feature-written-three-ways) shows one feature written in each stage.
 
@@ -448,7 +449,7 @@ class TextPluginScope extends StatefulWidget {
 
 3. **Filtering and opt-out (`exclude` and `none`)**: `TextPluginScope.exclude(types: {...})` filters out ancestor plugins whose `runtimeType` is in `types`, while `TextPluginScope.none` installs an empty scope (`plugins: const <TextPlugin>[]`), disabling all ancestor plugins for its `child` subtree.
 
-**Choosing a `paintOrder`.** It is an `int` and defaults to `0`. Most plugins should leave it at `0` and let the order of the scopes decide. A plugin sets it only when it has to sit above or below other plugins wherever it is installed. Two packages can still choose values that clash, and an app resolves that with scope order. Whether the framework should publish a few reference values is open ([Section 11](#11-open-questions)). The selection highlight does not use a number at all ([Section 3.5](#35-renderparagraph-and-rendereditable-painting-and-z-order-pipeline)).
+**Choosing a `paintOrder`.** It is an `int` and defaults to `0`. Most plugins should leave it at `0` and let the order of the scopes decide. A plugin sets it only when it has to sit above or below other plugins wherever it is installed. Two packages can still choose values that clash, and an app resolves that with scope order. Whether the framework should publish a few reference values is open ([Section 11](#11-open-questions)). The experimental selection highlight plugin does not use a number at all ([Section 5.2](#52-should-selection-highlighting-be-a-textplugin)).
 
 **The list is only the input.** `TextPluginScope.multiple` takes a list, and the scope turns it into the `Map<Type, TextPlugin>` described above. Why the scope takes plugin instances and not factories is explained in [Section 3.7](#37-who-owns-a-plugin).
 
@@ -481,7 +482,9 @@ class RenderParagraph extends RenderBox { // Same host contract on RenderEditabl
 
 3. Plugin `foregroundPainter`s run in ascending `paintOrder` (with root-to-leaf `TextPluginScope` installation order breaking ties), clipped under the same rule.
 
-In our current prototype, existing `SelectionArea` and `EditableText` selection layers remain in place around step 2 (`_SelectableFragment.paintSelection` before `_textPainter.paint` and `_SelectableFragment.paintHandles` after `foregroundPainter`s in `RenderParagraph`; `_backgroundRenderObject` and `_foregroundRenderObject` in `RenderEditable`). Inside a `SelectableRegion`, the prototype already paints the highlight of static text through `_SelectionHighlightTextPlugin` (see [Section 5.2](#52-should-selection-highlighting-be-a-textplugin)). Its `backgroundPainter` runs in step 1 after every other plugin background, directly behind the glyphs, whatever its `paintOrder`. Where that plugin is not installed, `_SelectableFragment.paintSelection` paints the highlight as before.
+Stage 1 does not change how selection is painted. The existing `SelectionArea` and `EditableText` selection layers remain in place around step 2 (`_SelectableFragment.paintSelection` before `_textPainter.paint` and `_SelectableFragment.paintHandles` after `foregroundPainter`s in `RenderParagraph`; `_backgroundRenderObject` and `_foregroundRenderObject` in `RenderEditable`).
+
+The prototype branch also contains an experiment that is **not part of this proposal** and does not land with stage 1. Inside a `SelectableRegion` it paints the highlight of static text through an internal `_SelectionHighlightTextPlugin` (see [Section 5.2](#52-should-selection-highlighting-be-a-textplugin)). Its `backgroundPainter` runs in step 1 after every other plugin background, directly behind the glyphs, whatever its `paintOrder`. Where that plugin is not installed, `_SelectableFragment.paintSelection` paints the highlight as before.
 
 ### 3.6 First-party `SearchInPagePlugin` implementation
 
@@ -581,7 +584,7 @@ Because `didAddText`, `didUpdateText`, and `didLayoutText` run after layout has 
 
 1. Calling `scrollToActiveMatch()` from `nextMatch()` or `previousMatch()` can immediately invoke `current.delegate.ensureVisible(current.range, duration: duration, curve: curve)` because every delegate in `_matches` has already completed layout. The scroll is animated: `scrollToActiveMatch` defaults to 250 ms with `Curves.easeInOut` and passes both to `ensureVisible`. A match that is scrolled out of view inside a multi-line text field is a known gap (see [Section 7.15](#715-a-match-inside-a-scrolled-text-field)).
 
-2. As detailed in [Section 7.1](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose), `_notifyListenersSafely()` checks `SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks`. Because `flushLayout()` runs inside `SchedulerPhase.persistentCallbacks`, `_notifyListenersSafely()` sets `_notificationScheduled = true` and coalesces all delegate mutations in that frame into a single `addPostFrameCallback` call to `notifyListeners()`.
+2. As detailed in [Section 7.1](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose), `_notifyListenersSafely()` checks `SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks`. Because the lifecycle callbacks run inside `SchedulerPhase.persistentCallbacks`, `_notifyListenersSafely()` sets `_notificationScheduled = true` and coalesces all delegate mutations in that frame into a single `addPostFrameCallback` call to `notifyListeners()`.
 
 ### 3.7 Who owns a plugin
 
@@ -614,6 +617,15 @@ Two rules follow:
 1. **A plugin with state is created in a `State`, not in `build`.** Delegates are keyed by plugin instance. A new instance on every rebuild means every text in the scope is removed from the old plugin and added to the new one.
 2. **A plugin without state can be `const`**, and is then safe to write inline.
 
+The first rule is about cost as well as lost state. Measured with the benchmark of [Section 3.8.1](#381-first-measurements), in two runs, a rebuild that reaches only the scope and changes nothing on the page takes:
+
+| Page | One plugin instance | A new plugin in every build |
+| :--- | ---: | ---: |
+| 1,000 paragraphs | under 0.1 ms | 7 to 12 ms |
+| 10,000 paragraphs | under 0.1 ms | 110 to 310 ms |
+
+Each range covers both runs. The low end is a plugin that does nothing, the high end is `SearchInPagePlugin` with an active query.
+
 #### Alternative considered: the scope takes factories
 
 Reviewers suggested `Map<Type, TextPlugin Function()>`, so that the scope creates and disposes plugins and a developer cannot leak one.
@@ -645,7 +657,7 @@ So the cost follows the amount of text that **changed** in a frame, not the amou
 
 #### 3.8.1 First measurements
 
-These numbers are from one machine: macOS desktop, profile mode, `examples/text_plugins/lib/benchmark.dart`. The benchmark was run several times while two problems were found and fixed. The tables are from the last run. A single number at the larger page size varies by a few milliseconds from run to run, so they show the shape of the cost, not exact values.
+These numbers are from one machine: macOS desktop, profile mode, `examples/text_plugins/lib/benchmark.dart`. The benchmark was run several times while two problems were found and fixed. The two tables of frame times are from one run on the current stage 1 branch, made after the post-layout callbacks moved to the binding ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The before and after table is from the runs made when the two problems were fixed. A single number at the larger page size varies by a few milliseconds from run to run, so they show the shape of the cost, not exact values.
 
 The page is a column of N paragraphs that are all mounted and laid out, each in its own repaint boundary. It is measured four ways: with no `TextPluginScope`, with a scope that installs no plugin, with a plugin that does nothing, and with `SearchInPagePlugin` and an active query that matches one paragraph in ten. A frame time is the time in `drawFrame` (build, layout, plugin callbacks, paint), averaged over 20 frames. The benchmark runs the frames itself and does not wait for vsync. Raster time is not included.
 
@@ -670,34 +682,34 @@ With 10,000 paragraphs, in milliseconds:
 | | No scope | Scope without plugins | Plugin that does nothing | Search plugin |
 | :--- | ---: | ---: | ---: | ---: |
 | Idle frame | < 0.01 | < 0.01 | < 0.01 | < 0.01 |
-| Frame in which 1 paragraph changes | 2.7 | 2.8 | 2.7 | 2.8 |
-| Frame in which 10 paragraphs change | 3.4 | 3.4 | 3.3 | 3.6 |
-| Frame in which 100 paragraphs change | 9.1 | 9.7 | 9.3 | 10.0 |
-| Frame that rebuilds every paragraph | 25.7 | 28.5 | 27.3 | 25.2 |
-| Frame that appends one paragraph | 32.6 | 39.6 | 34.3 | 33.0 |
-| First search, 1,000 matches | | | | 14.0 |
+| Frame in which 1 paragraph changes | 4.8 | 4.1 | 4.1 | 3.7 |
+| Frame in which 10 paragraphs change | 5.0 | 4.0 | 4.8 | 4.4 |
+| Frame in which 100 paragraphs change | 12.3 | 10.3 | 12.0 | 11.4 |
+| Frame that rebuilds every paragraph | 28.3 | 31.0 | 29.5 | 29.4 |
+| Frame that appends one paragraph | 38.3 | 40.2 | 38.1 | 38.6 |
+| First search, 1,000 matches | | | | 10.4 |
 
 With 1,000 paragraphs, in milliseconds:
 
 | | No scope | Scope without plugins | Plugin that does nothing | Search plugin |
 | :--- | ---: | ---: | ---: | ---: |
 | Idle frame | < 0.01 | < 0.01 | < 0.01 | < 0.01 |
-| Frame in which 1 paragraph changes | 0.4 | 0.3 | 0.3 | 0.3 |
-| Frame in which 10 paragraphs change | 0.8 | 0.9 | 1.0 | 0.9 |
-| Frame in which 100 paragraphs change | 5.8 | 5.4 | 6.2 | 5.8 |
-| Frame that rebuilds every paragraph | 1.4 | 1.3 | 1.7 | 1.3 |
-| Frame that appends one paragraph | 1.9 | 2.0 | 2.2 | 1.8 |
-| First search, 100 matches | | | | 1.0 |
+| Frame in which 1 paragraph changes | 0.3 | 0.4 | 0.6 | 0.3 |
+| Frame in which 10 paragraphs change | 0.9 | 1.2 | 0.8 | 1.2 |
+| Frame in which 100 paragraphs change | 5.9 | 6.4 | 6.2 | 6.6 |
+| Frame that rebuilds every paragraph | 1.3 | 1.5 | 1.5 | 1.8 |
+| Frame that appends one paragraph | 1.6 | 1.7 | 2.3 | 2.4 |
+| First search, 100 matches | | | | 0.9 |
 
 What they show:
 
-- **The lifecycle is not visible.** With a plugin installed, a frame in which text changes costs about the same as with no scope. The differences are under 1 ms and go both ways.
+- **The lifecycle is not visible.** With a plugin installed, a frame in which text changes costs about the same as with no scope. The differences are under 1 ms on the smaller page and under 3 ms on the larger one, and they go both ways.
 - **An idle frame costs nothing** in all four.
 - **The page itself grows with N.** A frame costs more on the larger page also with no scope, because the column has N children. Appending a paragraph rebuilds the whole column, which is why it is the most expensive frame in every column. That is not a plugin cost.
 - **Appending does not rescan the page.** With the search active, the append costs about the same as with a plugin that does nothing.
 - **The first search grows with the page.** Ten times the text takes about ten times as long.
-- **A changed text that has matches is cheap.** In these runs every changed paragraph had a match, which is the worst case for the search plugin. 100 of them cost under 1 ms more than with a plugin that does nothing.
-- **One number stands out and is probably noise.** The append under a scope without plugins is 39.6 ms. In the run before, the same case was 37.4 ms against 36.7 ms with no scope.
+- **A changed text that has matches is cheap.** In these runs every changed paragraph had a match, which is the worst case for the search plugin. 100 of them cost at most 0.4 ms more than with a plugin that does nothing.
+- **One column is not explained.** On the larger page, the append under a scope without plugins was slower than with no scope in all three runs that were kept: by 0.7 ms, 7.0 ms and 1.9 ms. In this run the full rebuild is also 2.7 ms slower. A scope with a plugin does more work and is not slower, so the plugin lifecycle is not the cause. It may be noise or the order in which the cases run. Repeated runs are owed to tell (item 1 below).
 
 So the cost model holds: the cost follows the text that changed.
 
@@ -724,6 +736,31 @@ A stage 1 plugin paints. These are the consequences, stated plainly so that the 
 
 For that reason the stage 1 example app has no plugin that needs a tap. Links and tap-to-reveal spoilers are stage 2 or stage 3 use cases.
 
+### 3.10 How stage 1 lands
+
+The prototype is one branch. It lands as 16 small PRs in sequence. Every PR is green on its own and changes nothing for an app that does not use `TextPluginScope`. PR 6 and PR 13 do not depend on the others and can be opened first. The line counts are rough estimates.
+
+| PR | Title | Layer | ~Code / ~Test lines | Depends on |
+| :-- | :-- | :-- | :-- | :-- |
+| **1** | `RendererBinding.addPostLayoutCallback` and the layout assertion | rendering | 100 / 150 |  |
+| **2** | `TextPlugin`, `TextDelegate`, `TextDelegateHost` interface | rendering | 400 / 200 | 1 |
+| **3** | `TextDelegateHostMixin` (lifecycle plumbing, painting) | rendering | 250 / 300 | 2 |
+| **4** | Document order: `compareTo` and `sortInDocumentOrder` | rendering | 150 / 150 | 2 |
+| **5** | `TextDelegate.showOnScreen` / `ensureVisible` | rendering | 80 / 120 | 3 |
+| **6** | `RenderEditable` local geometry helpers (prep) | rendering | 45 / 80 |  |
+| **7** | `RenderParagraph` adopts the host mixin | rendering | 100 / 200 | 3 |
+| **8** | `RenderEditable` adopts the host mixin | rendering | 120 / 180 | 3, 6 |
+| **9** | `TextPluginScope` + `RichText.textPlugins` + sample | widgets | 300 / 350 | 7 |
+| **10** | `EditableText.textPlugins` and the obscured-text rule | widgets | 25 / 120 | 8, 9 |
+| **11** | `Icon` opts out of ambient plugins | widgets | 5 / 30 | 9 |
+| **12** | Covered routes: `TextPluginSuspension` in `Overlay` | widgets | 80 / 130 | 9 |
+| **13** | `OffscreenRenderingPolicy` / `OffscreenContentRenderingStrategy` / `Viewport` | widgets (scrolling) | 110 / 150 |  |
+| **14** | `TextPlugin.needsOffscreenContent` wiring in `TextPluginScope` | widgets | 70 / 120 | 9, 13 |
+| **15** | `SearchInPagePlugin` + `SearchMatch` (first-party) + sample | widgets | 500 / 350 | 4, 5, 10, 14 |
+| **16** | API samples; demo app and benchmark decision | examples |  | 15 |
+
+The full plan, with the scope and the tests of each PR, is [text_plugins_implementation_plan.md](https://github.com/hannah-hyj/flutter/blob/text-plugin-mvp/text_plugins_implementation_plan.md) on the stage 1 branch.
+
 ---
 
 ## 4. Community package use cases
@@ -736,7 +773,7 @@ Alongside `SearchInPagePlugin` (covered in [Section 3.6](#36-first-party-searchi
 
 #### 1. TTS read-aloud karaoke synchronizer (`ReadAloudPlugin`)
 
-`ReadAloudPlugin` sorts mounted `TextDelegate`s in visual reading order via `delegates.sort()` (`TextDelegate.compareTo`) and tokenizes words while skipping `0xFFFC` `WidgetSpan` placeholders. It tints the active paragraph in `backgroundPainter`, paints a pill highlight over the spoken word in `foregroundPainter`, and calls `delegate.ensureVisible(wordRange)` when narration crosses a paragraph boundary. Updating word highlights via `CustomPainter` and `TextDelegate.markNeedsPaint()` avoids rebuilding or re-laying out `RenderParagraph` on every word boundary.
+`ReadAloudPlugin` sorts mounted `TextDelegate`s in visual reading order with `TextDelegate.sortInDocumentOrder` and tokenizes words while skipping `0xFFFC` `WidgetSpan` placeholders. It tints the active paragraph in `backgroundPainter`, paints a pill highlight over the spoken word in `foregroundPainter`, and calls `delegate.ensureVisible(wordRange)` when narration crosses a paragraph boundary. Updating word highlights via `CustomPainter` and `TextDelegate.markNeedsPaint()` avoids rebuilding or re-laying out `RenderParagraph` on every word boundary.
 
 #### 2. Read-only spellcheck and style-guide linter (`SpellcheckLinterPlugin`)
 
@@ -748,7 +785,7 @@ Alongside `SearchInPagePlugin` (covered in [Section 3.6](#36-first-party-searchi
 
 #### 4. Live content and SEO metadata extraction (`SeoExtractorPlugin`)
 
-`SeoExtractorPlugin` is a headless inspection plugin that attaches no painters. As `TextDelegate`s mount, update, and unmount, it indexes visible text in document order (`compareTo`) to compute live word counts, reading-time estimates, and structured Schema.org JSON-LD metadata. It is here to show that a plugin can collect all text of a subtree in document order. It is not offered as an SEO solution: the semantics tree carries more of what a search engine needs (headings, links), and SEO is not a goal of this RFC.
+`SeoExtractorPlugin` is a headless inspection plugin that attaches no painters. As `TextDelegate`s mount, update, and unmount, it indexes visible text to compute live word counts, reading-time estimates, and structured Schema.org JSON-LD metadata. It keeps the texts in the order in which they were mounted, which is enough for counts. A plugin that needs reading order sorts with `TextDelegate.sortInDocumentOrder`. It is here to show that a plugin can collect all text of a subtree without painting anything. It is not offered as an SEO solution: the semantics tree carries more of what a search engine needs (headings, links), and SEO is not a goal of this RFC.
 
 ### 4.2 Additional community package ideas
 
@@ -786,6 +823,7 @@ Scrolling to an entire `RenderParagraph` (`showOnScreen(rect: null)`) is not eno
 ```dart
 void ensureVisible(ui.TextRange range, {Duration duration = Duration.zero, Curve curve = Curves.ease}) {
   assert(hasLayout);
+  // While a frame is being produced, the scroll waits for the end of the frame (Section 7.16).
   final List<ui.TextBox> boxes = getBoxesForSelection(
     TextSelection(baseOffset: range.start, extentOffset: range.end),
     boxHeightStyle: ui.BoxHeightStyle.max,
@@ -806,6 +844,8 @@ If `targetRect` is already visible between the leading and trailing edges of the
 
 `duration` and `curve` are passed through, so the scroll can be animated. `Duration.zero` jumps.
 
+Both `ensureVisible` and `showOnScreen` can be called from a lifecycle callback. While a frame is being produced they scroll at the end of that frame, and otherwise right away ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
+
 One case is not covered: a range inside a multi-line text field that is scrolled out of view *inside the field*. See [Section 7.15](#715-a-match-inside-a-scrolled-text-field).
 
 ---
@@ -822,7 +862,7 @@ We solve this with Lowest Common Ancestor (LCA) render-tree traversal:
 
 2. `TextDelegate.compareTo` walks up `RenderObject.parent` from both `this.renderObject` and `other.renderObject` to find their lowest common ancestor (`commonParent`) and the two diverging child branches (`thisBranch` and `otherBranch`).
 
-3. It calls `commonParent.visitChildren(...)` to check which branch comes first. Because `ContainerRenderObjectMixin.visitChildren` (used by `RenderFlex`, `RenderWrap`, `RenderViewport`, and `RenderSliverList`) visits children from `firstChild` to `lastChild` in ascending logical index order, `delegates.sort()` produces top-to-bottom document order even when children are prepended during upward scrolling.
+3. It checks which of the two branches comes first under the common parent. For a parent that keeps a sibling list (`RenderFlex`, `RenderWrap`, `RenderSliverList`) it walks that list. For any other parent it calls `commonParent.visitChildren(...)`. Both follow the child order from `firstChild` to `lastChild`, so the result is top-to-bottom document order even when children are prepended during upward scrolling.
 
 #### Performance characteristics of LCA sorting
 
@@ -839,7 +879,19 @@ Sorting many delegates by comparing pairs is slow when they share one long paren
 
 A test checks that `sortInDocumentOrder` and `compareTo` give the same order, for parents with and without a sibling list.
 
-`SelectableRegion` has the same ordering problem and orders its selectables by position today. The comparison above only needs two render objects, so it could be shared. That is a follow-up outside this proposal.
+#### Where document order is wrong
+
+Document order follows the order of the children in the render tree. It is wrong where a layout shows its children in another order:
+
+- A reversed list (`ListView(reverse: true)`, as in a chat). The order runs bottom to top, so "next match" moves up the screen.
+- A column that lays out upwards (`verticalDirection: VerticalDirection.up`).
+- A `Stack` whose later children are placed higher.
+
+It is right for columns side by side and for a right-to-left row, where ordering by screen position has trouble. These cases were checked with a test on the prototype.
+
+This is a known limit of stage 1. A fix would let a parent say in which order its children are shown, and have the ordering follow that.
+
+`SelectableRegion` has the same ordering problem and orders its selectables by position today. The comparison above only needs two render objects, so the code could be shared. A `Selectable` does not expose a render object today, so selection would first need a way to get one. That is a follow-up outside this proposal.
 
 ---
 
@@ -897,6 +949,8 @@ A cheaper variant was suggested in review: build the offscreen widgets without l
 ---
 
 ### 5.2 Should selection highlighting be a `TextPlugin`?
+
+> Selection as a plugin is an experiment. It is **not part of this proposal**, and none of it lands with stage 1. This section records what was tried and what was learned. The stage 1 prototype branch contains the first part of the experiment, the highlight of static text. A separate branch goes further ([Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed)).
 
 When a user drags to select text inside a [SelectionArea](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/material/selection_area.dart) or [SelectableRegion](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/widgets/selectable_region.dart), Flutter draws a colored rectangle behind the selected characters. A natural architectural question is what parts of text selection can be implemented as a `TextPlugin`, and what parts cannot.
 
@@ -968,7 +1022,7 @@ While `CustomPainter` can draw selection rectangles on a `Canvas`, it cannot rep
 
 Moving all of `SelectionArea`'s text responsibilities into a `TextPlugin` involves a core trade-off: it removes roughly 2,100 lines of `_SelectableFragment` code from `RenderParagraph`, but it requires expanding `TextDelegate` beyond canvas painting into composited layer management and `SelectionRegistrar` plumbing.
 
-Because of that trade-off, this initial proposal keeps the rest of Flutter's built-in selection code unchanged while landing the core `TextPlugin` pipeline first. Only the painting of the highlight for static text goes through a plugin (see 5.2.5). If we choose to migrate `SelectionArea` to `TextPlugin` in a follow-up, it would require four steps, of which the first two already exist in the prototype:
+Because of that trade-off, this proposal keeps Flutter's built-in selection code unchanged and lands the core `TextPlugin` pipeline first. If we choose to migrate `SelectionArea` to `TextPlugin` in a follow-up, it would require four steps, of which the first two exist as an experiment on the prototype branch (see 5.2.5):
 
 1. Expose per-paragraph `selections` (`List<TextSelection>`) and `selectionColor` (`Color?`) on `TextDelegate`, and have `SelectionContainer` and `SelectableRegion` install `_SelectionHighlightTextPlugin` to draw selection boxes via `delegate.backgroundPainter`.
 
@@ -980,7 +1034,7 @@ Because of that trade-off, this initial proposal keeps the rest of Flutter's bui
 
 #### 5.2.5 What has been done, and what an experiment showed
 
-**In the stage 1 prototype.** Steps 1 and 2 of the roadmap above exist. `TextDelegate` exposes `selections` and `selectionColor`. `SelectableRegion` installs an internal `_SelectionHighlightTextPlugin`, which paints the highlight of static text. `TextPluginScope.exclude` keeps it. Everything else about selection is unchanged and stays in `RenderParagraph`.
+**On the stage 1 prototype branch, as an experiment.** Steps 1 and 2 of the roadmap above exist. `TextDelegate` exposes `selections` and `selectionColor`. `SelectableRegion` installs an internal `_SelectionHighlightTextPlugin`, which paints the highlight of static text. `TextPluginScope.exclude` keeps it. Everything else about selection is unchanged and stays in `RenderParagraph`. This code is on the branch to try the idea. It is not part of the proposal and does not land with stage 1.
 
 **In a separate experiment.** The [`text-plugin-selection`](https://github.com/hannah-hyj/flutter/tree/text-plugin-selection) branch goes further and moves the text half of selection (`_SelectableFragment`, the highlight and the handle layers) out of `RenderParagraph` into a `TextSelectionPlugin`.
 
@@ -1179,7 +1233,7 @@ Suppose a search bar widget at the top of the screen listens to `SearchInPagePlu
 
 When the user scrolls a `ListView` and a new `Text` item mounts on screen, `searchPlugin.didAddText(delegate)` is called while Flutter is in the middle of producing the frame, right after layout (`SchedulerPhase.persistentCallbacks`). Inside `didAddText`, `SearchInPagePlugin` scans the new paragraph and finds a sixth match (`"1 of 6 matches"`).
 
-If `SearchInPagePlugin` calls `notifyListeners()` synchronously inside `didAddText` (or inside `didUpdateText`, `didLayoutText`, or `didRemoveText`), the search bar widget will call `setState()` while Flutter is still building or laying out the widget tree. Flutter then throws a `setState() or markNeedsBuild() called during build` assertion error.
+If `SearchInPagePlugin` calls `notifyListeners()` synchronously inside `didAddText` (or inside `didUpdateText`, `didLayoutText`, or `didRemoveText`), the search bar widget will call `setState()` in the middle of the frame, after the build phase has finished. In debug mode Flutter then throws "Build scheduled during frame".
 
 To avoid this crash, plugins separate canvas repaints from external widget notifications:
 
@@ -1296,7 +1350,7 @@ When a `Text` widget is inside both a `SelectionArea` and a `TextPluginScope`, b
 
 If a plugin's `backgroundPainter` painted on top of the user's text selection highlight, an opaque plugin badge would hide the user's selection rectangle. If a plugin's `foregroundPainter` painted on top of selection drag handles, the handles could be covered.
 
-In `RenderParagraph.paint`, plugin `backgroundPainter`s paint behind `_SelectableFragment.paintSelection` (or before `_SelectionHighlightTextPlugin`, which always paints last among the backgrounds) so user text selection remains visible over plugin background tints. Plugin `foregroundPainter`s paint in front of glyphs (for underlines and overlays) but behind `_SelectableFragment.paintHandles`.
+In `RenderParagraph.paint`, plugin `backgroundPainter`s paint behind `_SelectableFragment.paintSelection` (or, in the selection experiment, before `_SelectionHighlightTextPlugin`, which always paints last among the backgrounds) so user text selection remains visible over plugin background tints. Plugin `foregroundPainter`s paint in front of glyphs (for underlines and overlays) but behind `_SelectableFragment.paintHandles`.
 
 ---
 
@@ -1306,7 +1360,7 @@ In Flutter, many UI controls use `Text` and `RichText` internally, including `Ap
 
 If a developer wraps their entire `MaterialApp` or `Scaffold` in a `TextPluginScope(plugin: searchPlugin, ...)`, searching for `'Add'` highlights the `'Add Text'` button label. Worse, if the search bar itself is inside the `TextPluginScope` and displays `'1 / 4'`, typing `'1'` matches the search bar's own match counter.
 
-`TextPluginScope.none` strips all ancestor `TextPlugin`s for its `child` subtree (and `TextPluginScope.exclude(types: {SearchInPagePlugin})` strips specific plugin types while preserving selection). Developers should either place `TextPluginScope` around the content body rather than the outer `Scaffold` chrome, or wrap embedded toolbars and search bars in `TextPluginScope.none`.
+`TextPluginScope.none` strips all ancestor `TextPlugin`s for its `child` subtree (and `TextPluginScope.exclude(types: {SearchInPagePlugin})` strips specific plugin types while keeping the others). Developers should either place `TextPluginScope` around the content body rather than the outer `Scaffold` chrome, or wrap embedded toolbars and search bars in `TextPluginScope.none`.
 
 ---
 
@@ -1316,7 +1370,7 @@ In a `ListView.builder` or `CustomScrollView` with 1,000 paragraphs, Flutter by 
 
 As the user scrolls down, top paragraphs are deactivated (`detach()` fires `didRemoveText`) and bottom paragraphs are mounted (post-layout flush fires `didAddText`). Visual decoration plugins (`StockTickerPlugin`, `SpellcheckLinterPlugin`) keep `needsOffscreenContent => false` and work with $O(\text{visible items})$ memory overhead.
 
-Document-wide plugins (`SearchInPagePlugin`, `SeoExtractorPlugin`) handle upward scroll mount order via `TextDelegate.compareTo`, character-range scrolling via `TextDelegate.ensureVisible`, and configurable offscreen item discovery via `TextPlugin.needsOffscreenContent` and `OffscreenContentRenderingStrategy` (`OffscreenRenderingPolicy.eager(cacheExtent: ...)`; see [Section 5.1.3](#513-declarative-offscreen-content-rendering-needsoffscreencontent-and-offscreencontentrenderingstrategy)).
+Document-wide plugins such as `SearchInPagePlugin` handle upward scroll mount order via `TextDelegate.compareTo` and `TextDelegate.sortInDocumentOrder`, character-range scrolling via `TextDelegate.ensureVisible`, and configurable offscreen item discovery via `TextPlugin.needsOffscreenContent` and `OffscreenContentRenderingStrategy` (`OffscreenRenderingPolicy.eager(cacheExtent: ...)`; see [Section 5.1.3](#513-declarative-offscreen-content-rendering-needsoffscreencontent-and-offscreencontentrenderingstrategy)).
 
 ---
 
@@ -1474,7 +1528,7 @@ Because `TextPlugin` is non-destructive and does not mutate the input `InlineSpa
 ## 9. Stage 3: widgets
 
 > Stage 3 is a future stage. It is **not** part of what this RFC asks to land.
-> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document. The findings about the two example plugins come from the experiment's own report.
+> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document, on the November 11 stage 1. They will be run again after the branch is rebased onto the current stage 1 branch. The findings about the two example plugins come from the experiment's own report.
 
 ### 9.1 What it adds
 
@@ -1638,6 +1692,6 @@ For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#
 | A match inside a scrolled text field is not scrolled into view ([Section 7.15](#715-a-match-inside-a-scrolled-text-field)) | `text-plugin-mvp` | Ran, and checked by hand in the example app |
 | Stage 2 behavior ([Section 8](#8-stage-2-annotations)) | `text-plugin-annotations` | From the design notes and test names on the branch. Tests not run |
 | What stages 2 and 3 touch in stage 1 code | Both | Read from the diff against stage 1 |
-| The stage 3 framework tests pass, together with the unchanged stage 1 tests (50 tests) | `text-plugin-with-widget` | Ran, before the last stage 1 commit |
+| The stage 3 framework tests pass, together with the unchanged stage 1 tests (50 tests) | `text-plugin-with-widget` | Ran on the November 11 stage 1. Not run again since the stage 1 changes of [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback) |
 | Stage 3 findings and defects ([Section 9](#9-stage-3-widgets)) | `text-plugin-with-widget` | From the experiment's report |
 | Selection experiment ([Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed)) | `text-plugin-selection` | From the experiment's report. Not run again, and not rebased |
