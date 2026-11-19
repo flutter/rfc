@@ -5,7 +5,7 @@ title: Composable Text Plugins in Flutter
 description: Introduces TextPluginScope, TextPlugin, and TextDelegate for composable cross-cutting text inspection and decoration across RenderParagraph and RenderEditable, as the first of three stages.
 status: draft
 created: 2026-10-14T00:00:00Z
-updated: 2026-11-16T00:00:00Z
+updated: 2026-11-19T00:00:00Z
 tags:
   - 170-text-editing-and-selection
   - 120-rendering
@@ -27,7 +27,7 @@ Text plugins are planned in three stages. **This RFC asks to land stage 1 only.*
 
 | Stage | What a plugin can do | Branch | Status in this RFC |
 | :--- | :--- | :--- | :--- |
-| 1. Painter only (MVP) | Paint behind or in front of text with a `CustomPainter`. No pointer events, no semantics | [`text-plugin-mvp`](https://github.com/hannah-hyj/flutter/tree/text-plugin-mvp) | **The proposal** ([Sections 3 to 7](#3-stage-1-architecture-and-component-design)) |
+| 1. Painter only (MVP) | Paint behind or in front of text with a `TextPluginPainter`, which receives the layout of the text while it paints. No pointer events, no semantics | [`text-plugin-mvp`](https://github.com/hannah-hyj/flutter/tree/text-plugin-mvp) | **The proposal** ([Sections 3 to 7](#3-stage-1-architecture-and-component-design)) |
 | 2. Annotations | Gestures, hover, semantics and focus for a text range, through `TextAnnotation` | [`text-plugin-annotations`](https://github.com/hannah-hyj/flutter/tree/text-plugin-annotations) | Future stage, shown to work by experiment ([Section 8](#8-stage-2-annotations)) |
 | 3. Widgets | Build real widgets behind, in front of, or floating over text | [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget) | Future stage, shown to work by experiment ([Section 9](#9-stage-3-widgets)) |
 
@@ -69,7 +69,7 @@ Moving text selection into a plugin was also tried. It is not one of the three s
   - [6.2 Native text fields and platform views](#62-native-text-fields-and-platform-views)
 - [7. Corner cases and architectural analysis](#7-corner-cases-and-architectural-analysis)
   - [7.1 `ChangeNotifier` and `setState` re-entrancy during build, layout, and dispose](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose)
-  - [7.2 Why `didAddText`, `didUpdateText`, and `didLayoutText` are flushed post-layout](#72-why-didaddtext-didupdatetext-and-didlayouttext-are-flushed-post-layout)
+  - [7.2 Why `didAddText` and `didUpdateText` run after layout](#72-why-didaddtext-and-didupdatetext-run-after-layout)
   - [7.3 Embedded `WidgetSpan`s and UTF-16 offset alignment](#73-embedded-widgetspans-and-utf-16-offset-alignment)
   - [7.4 Text truncation and overflow clipping](#74-text-truncation-and-overflow-clipping)
   - [7.5 Multi-line wrapping, bidirectional text, and surrogate pairs](#75-multi-line-wrapping-bidirectional-text-and-surrogate-pairs)
@@ -193,7 +193,7 @@ It is unrelated to a **Flutter plugin**, which is a package that contains platfo
 
 - `TextPlugin` is not a security or PII redaction mechanism. Drawing an opaque bar in `foregroundPainter` only hides glyphs on screen, while the plain text remains accessible to `Ctrl+F`, `SelectionArea` copy-paste, the `Semantics` tree, and DevTools. Apps must scrub sensitive strings at the data layer before passing them to `Text` widgets. The one protection the framework does give is for password fields: an `EditableText` with `obscureText` set is never given to a plugin (see [Section 7.13](#713-obscured-text-fields-are-never-given-to-a-plugin)).
 
-- Plugins do not mutate the input `InlineSpan` tree or alter text layout metrics. They decorate and observe laid-out text via [CustomPainter](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/custom_paint.dart) hooks (`backgroundPainter` and `foregroundPainter`).
+- Plugins do not mutate the input `InlineSpan` tree or alter text layout metrics. They decorate and observe laid-out text through two painter hooks (`backgroundPainter` and `foregroundPainter`). A painter is a `TextPluginPainter`. It receives the layout of the text as a parameter of `paint` ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)).
 
 - Stage 1 plugins do not receive pointer events, do not change semantics or focus, and do not build widgets. Those belong to stages 2 and 3 (see [Section 2.3](#23-the-three-stages) and [Section 3.9](#39-what-stage-1-cannot-do)).
 
@@ -237,7 +237,7 @@ Domain-specific or third-party-dependent features belong in standalone community
 
 The `TextPlugin` API follows four design rules so it can support both first-party plugins and community packages:
 
-1. `TextDelegate` exposes a plain-text getter (`text`) and low-level geometry and painting primitives (`getBoxesForSelection`, `getPositionForOffset`, `getWordBoundary`, `getOffsetForCaret`, `backgroundPainter`, and `foregroundPainter`) rather than feature-specific methods. The framework decides how a text becomes that one string, so that a plugin does not have to: one string per text widget, a `WidgetSpan` is one U+FFFC character, semantics labels are left out, and offsets are UTF-16 offsets, the same ones the geometry queries take ([Section 7.3](#73-embedded-widgetspans-and-utf-16-offset-alignment)).
+1. `TextDelegate` exposes a plain-text getter (`text`) and two painter slots (`backgroundPainter` and `foregroundPainter`) rather than feature-specific methods. The low-level geometry (`getBoxesForSelection`, `getPositionForOffset`, `getWordBoundary`, `getOffsetForCaret`, `getFullHeightForCaret`) is not on the delegate. It is on `TextLayout`, which a painter receives while it paints ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)). The framework decides how a text becomes that one string, so that a plugin does not have to: one string per text widget, a `WidgetSpan` is one U+FFFC character, semantics labels are left out, and offsets are UTF-16 offsets, the same ones the geometry queries take ([Section 7.3](#73-embedded-widgetspans-and-utf-16-offset-alignment)).
 
 2. `TextPluginScope` stacks plugins across the widget tree, deduplicating by plugin `Type` (so inner scopes can override outer scopes of the same `Type`, matching `Actions` and `Shortcuts`) and sorting by `TextPlugin.paintOrder`. `TextPluginScope.exclude(types: {...})` lets app developers filter out specific plugin types on UI chrome without disabling the others.
 
@@ -249,7 +249,7 @@ The `TextPlugin` API follows four design rules so it can support both first-part
 
 | | Stage 1: painter only | Stage 2: annotations | Stage 3: widgets |
 | :--- | :--- | :--- | :--- |
-| A plugin gives the text | A `CustomPainter` behind and one in front | Data about a range: tap, long-press, cursor, hover, label, link | Widgets positioned on a range |
+| A plugin gives the text | A `TextPluginPainter` behind and one in front | Data about a range: tap, long-press, cursor, hover, label, link | Widgets positioned on a range |
 | Pointer events | None | Through the gesture arena | Whatever the widgets do |
 | Semantics and focus | Unchanged | A range can be a link or a button, and can take focus | Whatever the widgets do |
 | Changes text layout | No | No | No |
@@ -262,7 +262,7 @@ The rules for staging are:
 2. A later stage adds API. It does not change the stage 1 public API. A plugin written for stage 1 keeps working.
 3. A plugin uses the smallest stage that fits. A highlight stays a painter even when widgets are available, because a painter costs the least.
 
-Both experiments are built directly on top of the current stage 1 branch. They were rebased on November 16, after the post-layout callbacks moved to the binding ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). They do not have the later change that made the render object of a `TextDelegate` private ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)). The stage 3 experiment reads it once from the widgets layer, which has to be solved when that stage is designed. Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
+Both experiments are built on top of the stage 1 branch as it was on November 16, after the post-layout callbacks moved to the binding ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). They do not have two later changes ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)): the render object of a `TextDelegate` became private, and the layout of the text moved from the delegate to a parameter of `paint`. So the two branches still use the older stage 1 API: geometry on the delegate, `CustomPainter`, and `didLayoutText`. The stage 3 experiment reads the render object once from the widgets layer, which has to be solved when that stage is designed. Sections [8](#8-stage-2-annotations) and [9](#9-stage-3-widgets) list exactly what each one touches in the stage 1 code, since "no change to the public API" is not the same as "no change to the files".
 
 [Section 10](#10-the-same-feature-written-three-ways) shows one feature written in each stage.
 
@@ -311,7 +311,7 @@ class _ArticlePageState extends State<ArticlePage> {
 
 | Layer | File | Public Symbols | Responsibility |
 | :--- | :--- | :--- | :--- |
-| **Rendering** | `packages/flutter/lib/src/rendering/text_plugin.dart` | `TextPlugin`, `TextDelegate` | Defines the plugin lifecycle interface (`needsOffscreenContent`, `paintOrder`, post-layout callbacks) and the per-plugin `TextDelegate` proxy wrapping `RenderParagraph` or `RenderEditable`. |
+| **Rendering** | `packages/flutter/lib/src/rendering/text_plugin.dart` | `TextPlugin`, `TextDelegate`, `TextPluginPainter`, `TextLayout`, `TextDelegateHostMixin` | Defines the plugin lifecycle interface (`needsOffscreenContent`, `paintOrder`, post-layout callbacks), the per-plugin `TextDelegate` proxy wrapping `RenderParagraph` or `RenderEditable`, the painter type, the `TextLayout` that a painter receives in `paint`, and the mixin that the text render objects use. |
 | **Rendering** | [packages/flutter/lib/src/rendering/binding.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/binding.dart) | `RendererBinding.addPostLayoutCallback` (new, `@internal`), `RendererBinding.flushPostLayoutCallbacks` (new, `@protected`) | Runs post-layout callbacks once per frame in `drawFrame`, after the root pipeline owner has flushed layout and before paint. |
 | **Rendering** | [packages/flutter/lib/src/rendering/paragraph.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/paragraph.dart) | `RenderParagraph.textPlugins` | Reconciles delegates, schedules post-layout lifecycle callbacks, and executes painters for static text. |
 | **Rendering** | [packages/flutter/lib/src/rendering/editable.dart](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/editable.dart) | `RenderEditable.textPlugins` | Reconciles delegates, schedules post-layout lifecycle callbacks during typing and layout, and executes painters for editable text fields. |
@@ -325,7 +325,7 @@ class _ArticlePageState extends State<ArticlePage> {
 
 ### 3.2 `TextPlugin` lifecycle contract
 
-Defined in `packages/flutter/lib/src/rendering/text_plugin.dart`, `TextPlugin` exposes declarative `needsOffscreenContent` and `paintOrder` getters and four lifecycle hooks:
+Defined in `packages/flutter/lib/src/rendering/text_plugin.dart`, `TextPlugin` exposes declarative `needsOffscreenContent` and `paintOrder` getters and three lifecycle hooks:
 
 ```dart
 abstract class TextPlugin {
@@ -336,76 +336,105 @@ abstract class TextPlugin {
 
   void didAddText(TextDelegate delegate) {}
   void didUpdateText(TextDelegate delegate) {}
-  void didLayoutText(TextDelegate delegate) {}
   void didRemoveText(TextDelegate delegate) {}
 }
 ```
 
 There is no pointer hook. An earlier version of this proposal had `TextPlugin.handlePointerEvent`, which delivered raw pointer events outside the gesture arena. It is removed. Interaction comes back in stage 2 as recognizers that take part in the arena ([Section 8](#8-stage-2-annotations)).
 
-#### Post-layout lifecycle guarantee (`didAddText`, `didUpdateText`, `didLayoutText`)
+There is no layout hook either. An earlier version of this proposal had `TextPlugin.didLayoutText`, which told a plugin that the geometry of a text was valid again. It is removed, because a plugin no longer reads geometry in a callback. A painter receives the layout of the text as a parameter of `paint` ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)).
 
-Plugins often need to query word boxes (`getBoxesForSelection`) or screen positions (`localToGlobal`) and attach a painter as soon as text appears or changes:
+#### Post-layout lifecycle guarantee (`didAddText`, `didUpdateText`)
 
-- **Before or during layout is too early:** Sizes and parent offsets are not finalized yet, so geometry queries crash or return stale coordinates.
-- **After the frame (`addPostFrameCallback`) is too late:** The frame has already painted, causing a 1-frame flash of unhighlighted (or unmasked) text.
+`didAddText` and `didUpdateText` do not run at the moment a text is attached or changed. `RenderParagraph` and `RenderEditable` schedule them with `RendererBinding.addPostLayoutCallback`, which runs them once per frame, **after layout has been flushed and before paint starts** (see [Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout) for the reasons). Two things follow:
 
-To hit the exact sweet spot **after layout finishes and before paint starts**, `RenderParagraph` and `RenderEditable` schedule these callbacks with `RendererBinding.addPostLayoutCallback`, which runs them once per frame after layout has been flushed (see [Section 7.2](#72-why-didaddtext-didupdatetext-and-didlayouttext-are-flushed-post-layout) for pipeline details). Every glyph box and screen coordinate is ready (`delegate.hasLayout == true`), and any `backgroundPainter` or `foregroundPainter` set in the callback paints in the **same frame**:
+- **The render tree is complete.** Every text of the frame is in the tree by then, also text that is created during layout, such as the items of a lazy list. So the document order of a delegate (`TextDelegate.compareTo`) is valid inside the callback.
+- **A painter set in the callback paints in the same frame.** After the frame (`addPostFrameCallback`) would be too late: the frame has already painted, and the text would show for one frame without its highlight (or mask).
+
+The layout of the text is not available in a callback. The plugin sets a `backgroundPainter` or a `foregroundPainter`, and that painter receives a `TextLayout` when it paints.
 
 1. **`didAddText(delegate)`**: Fires once after a new `(RenderObject, TextPlugin)` pair finishes its first layout.
-2. **`didUpdateText(delegate)`**: Fires post-layout when the text or span styles changed.
-3. **`didLayoutText(delegate)`**: Fires post-layout every time the text has a new layout. That includes the frames in which `didAddText` or `didUpdateText` fire: it is called right after them.
-4. **`didRemoveText(delegate)`**: Fires synchronously when a plugin is removed from scope or the render object detaches. *(Skipped if layout never ran, so `didAddText` and `didRemoveText` are always paired.)*
+2. **`didUpdateText(delegate)`**: Fires post-layout when the text changed. `RenderParagraph` reports a change of its plain text. `RenderEditable` reports any change of its span. A text that changes more than once in a frame is reported once.
+3. **`didRemoveText(delegate)`**: Fires synchronously when a plugin is removed from scope or the render object detaches. *(Skipped if layout never ran, so `didAddText` and `didRemoveText` are always paired.)*
 
-So the three content callbacks say **what changed**, and `didLayoutText` says **the geometry is valid again**:
-
-| What happened to the text | Callbacks, in order |
+| What happened to the text | Callback |
 | :--- | :--- |
-| It appeared | `didAddText`, then `didLayoutText` |
-| Its text changed | `didUpdateText`, then `didLayoutText` |
-| It was laid out again with the same text (for example, the window was resized) | `didLayoutText` |
+| It appeared | `didAddText` |
+| Its text changed | `didUpdateText` |
+| It was laid out again with the same text (for example, the window was resized) | None. The text is painted again, and its painters receive the new `TextLayout` |
 | It was removed, or the plugin left the scope | `didRemoveText` |
 
-The callbacks are kept apart on purpose. A plugin that scans text does it in `didAddText` and `didUpdateText`. A plugin that only depends on geometry does its work in `didLayoutText`. `SearchInPagePlugin` rescans a text when its content changes, and only repaints it when it is laid out again. With one merged callback, every plugin would rescan on every resize.
+A layout change needs no callback. A plugin scans text in `didAddText` and `didUpdateText`, and gives what it found to its painters. When the text is laid out again, the framework paints it again, and each painter computes its boxes from the `TextLayout` it receives. `SearchInPagePlugin` rescans a text only when its content changes. A resize costs it a repaint and no rescan. The listeners of the delegate are not notified for a layout change either.
 
 ### 3.3 `TextDelegate` proxy for text render objects
 
 Passing `RenderParagraph` directly to plugins would allow plugins to corrupt layout state, mutate constraints, or overwrite each other's painters. Instead, **each `(RenderObject, TextPlugin)` pair gets its own dedicated `TextDelegate` instance** (a strict 1-to-1 cardinality per `(RenderObject, TextPlugin)` pair):
 
 - If a `RenderParagraph` is inside a scope with 3 active `TextPlugin`s (`SearchInPagePlugin`, `StockTickerPlugin`, and `ReadAloudPlugin`), `RenderParagraph` creates 3 distinct `TextDelegate` instances.
-- Each `TextDelegate` owns isolated `backgroundPainter` and `foregroundPainter` slots for its specific `TextPlugin`. When `SearchInPagePlugin` sets `delegate.backgroundPainter = null`, it only clears its own delegate's painter slot and never affects `StockTickerPlugin` or `ReadAloudPlugin`. Setting or replacing a painter checks `shouldRepaint`, attaches or detaches the painter's `Listenable` (`addListener(_paragraph.markNeedsPaint)`), and calls `markNeedsPaint()` only when needed.
+- Each `TextDelegate` owns isolated `backgroundPainter` and `foregroundPainter` slots for its specific `TextPlugin`. When `SearchInPagePlugin` sets `delegate.backgroundPainter = null`, it only clears its own delegate's painter slot and never affects `StockTickerPlugin` or `ReadAloudPlugin`. Setting or replacing a painter checks `shouldRepaint`, attaches or detaches the painter's `Listenable` (`addListener(_host.markNeedsPaint)`), and calls `markNeedsPaint()` only when needed.
 
 ```dart
 class TextDelegate extends ChangeNotifier implements Comparable<TextDelegate> {
   // The render object is a private field. See below.
   final TextPlugin plugin;
 
-  // Text & layout state
+  // Text state. No size and no geometry.
   String get text;
   InlineSpan get textSpan;
-  bool get hasLayout;
-  Size get size;
+  List<ui.TextRange> get placeholderRanges;
+  ui.TextDirection get textDirection;
+  bool get attached;
 
   // Isolated per-plugin painter slots
-  CustomPainter? backgroundPainter;
-  CustomPainter? foregroundPainter;
+  TextPluginPainter? backgroundPainter;
+  TextPluginPainter? foregroundPainter;
+  void markNeedsPaint();
 
-  // Geometry & scrolling
+  // Scrolling and document order
+  void ensureVisible(ui.TextRange range, { ... });
+  int compareTo(TextDelegate other);
+  static void sortInDocumentOrder(List<TextDelegate> delegates);
+}
+
+abstract class TextPluginPainter extends Listenable {
+  const TextPluginPainter({Listenable? repaint});
+
+  void paint(Canvas canvas, TextLayout layout);
+  bool shouldRepaint(covariant TextPluginPainter oldPainter);
+}
+
+// Only valid during the `paint` call that received it.
+final class TextLayout {
+  Size get size;
   List<ui.TextBox> getBoxesForSelection(TextSelection selection, { ... });
   ui.TextPosition getPositionForOffset(Offset offset);
-  void ensureVisible(ui.TextRange range, { ... });
+  ui.TextRange getWordBoundary(ui.TextPosition position);
+  Offset getOffsetForCaret(ui.TextPosition position, Rect caretPrototype);
+  double getFullHeightForCaret(ui.TextPosition position);
 }
 ```
 
-#### Opinionated plain-text and geometry contract
+#### The layout is a parameter of `paint`
 
-To prevent subtle offset alignment bugs across plugins, `TextDelegate` is deliberately opinionated about how text and glyph boxes are exposed:
+`TextDelegate` has no size and no geometry queries. The rule is:
+
+> A plugin never holds the layout. The framework hands it a `TextLayout` as a parameter of a callback, and it is valid only during that call.
+
+In stage 1 the only such callback is `TextPluginPainter.paint`. `TextPluginPainter` is the text plugin counterpart of `CustomPainter`: it has `paint`, `shouldRepaint`, and an optional `repaint` listenable. The difference is the second parameter of `paint`, which is the `TextLayout` of the text and not a `Size`.
+
+Everything on `TextLayout` is in the text's own coordinate space, which is also the coordinate space of the canvas that the painter receives. Using a `TextLayout` after the `paint` call has returned fails an assertion in debug mode.
+
+The reason for the rule is that the paint phase comes after all layout of the frame. In earlier versions of the prototype a plugin could read geometry from the delegate at any time, and at several of those moments the layout was not final ([Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout)).
+
+#### Plain-text and geometry contract
+
+To prevent subtle offset alignment bugs across plugins, the framework fixes how text and glyph boxes are exposed:
 
 1. **`delegate.text`**: Always returns `_paragraph.text.toPlainText(includeSemanticsLabels: false)` (keeping `includePlaceholders: true`, so each inline `WidgetSpan` is represented by a single `\uFFFC` character matching `ui.Paragraph`'s internal UTF-16 buffer). Plugin authors never call `InlineSpan.toPlainText` themselves and never have to worry about `TextSpan.semanticsLabel` shifting character offsets or plugins accidentally matching accessibility label overrides. `delegate.textSpan` remains available as a read-only inspection getter for plugins that explicitly inspect font styles.
-2. **`delegate.getBoxesForSelection`**: Defaults to `bool includePlaceholders = false` (`List<ui.TextBox> getBoxesForSelection(TextSelection selection, {ui.BoxHeightStyle boxHeightStyle = ui.BoxHeightStyle.tight, ui.BoxWidthStyle boxWidthStyle = ui.BoxWidthStyle.tight, bool includePlaceholders = false})`), automatically splitting selection ranges around `delegate.placeholderRanges` so text highlights and underlines do not paint across inline `WidgetSpan` children unless explicitly requested.
-3. **`delegate.hasLayout`**: Tracks `renderObject.hasSize && _hasValidLayout` (where `_hasValidLayout` is set to `false` in `markNeedsLayout()` and `true` at the end of `performLayout()`). Unlike `RenderObject.debugNeedsLayout` (which always returns `false` in release builds), `delegate.hasLayout` is accurate in both debug and release modes, and is guaranteed to be `true` inside `didAddText`, `didUpdateText`, `didLayoutText`, and `CustomPainter.paint`.
+2. **`TextLayout.getBoxesForSelection`**: Defaults to `bool includePlaceholders = false` (`List<ui.TextBox> getBoxesForSelection(TextSelection selection, {ui.BoxHeightStyle boxHeightStyle = ui.BoxHeightStyle.tight, ui.BoxWidthStyle boxWidthStyle = ui.BoxWidthStyle.tight, bool includePlaceholders = false})`), automatically splitting selection ranges around the placeholder characters (`delegate.placeholderRanges`) so text highlights and underlines do not paint across inline `WidgetSpan` children unless explicitly requested.
+3. **No layout check in a painter**: The framework paints a text after it has laid it out. So a painter does not ask whether the text has a layout, and the delegate has no getter for it.
 
-Finally, `TextDelegate` provides coordinate conversion and scrolling helpers: `localToGlobal`, `globalToLocal`, `getTransformTo`, `showOnScreen`, and `ensureVisible`. These helpers allow find-in-page plugins to scroll the active match into the viewport.
+`TextDelegate` has no coordinate conversion (`localToGlobal`, `globalToLocal`, `getTransformTo`) and no `showOnScreen`. It has one scrolling helper, `ensureVisible(range)`. The framework computes the rectangle of the range itself, so a find-in-page plugin can scroll the active match into the viewport without the layout ([Section 5.1.1](#511-scrolling-to-a-specific-character-range-textdelegateensurevisible)).
 
 #### What a plugin can read and what it can write
 
@@ -416,11 +445,11 @@ Finally, `TextDelegate` provides coordinate conversion and scrolling helpers: `l
 | Set its own painter behind the text | `backgroundPainter` |
 | Set its own painter in front of the text | `foregroundPainter` |
 | Ask for a repaint | `markNeedsPaint()` |
-| Ask to scroll a rectangle or a range into view | `showOnScreen()`, `ensureVisible()` |
+| Ask to scroll a range into view | `ensureVisible()` |
 
-Everything else is a getter or a geometry query. Because each plugin has its own delegate for a text, a plugin cannot reach the painters of another plugin.
+Everything else on the delegate is a getter, or orders delegates (`compareTo`, `sortInDocumentOrder`). The queries on `TextLayout` only read. Because each plugin has its own delegate for a text, a plugin cannot reach the painters of another plugin.
 
-`TextDelegate` does not expose its render object. The delegate keeps it in a private field, because a plugin could cast it and change the text through it, or reach the painters of another plugin. The framework code that needs the render object is `TextDelegateHostMixin`, which is in the same library as `TextDelegate`. `RenderParagraph` and `RenderEditable` both use that mixin, so nothing outside the library has to reach it and no `@internal` is needed. The same holds for the state that tracks what each plugin was told: it is private to that library.
+`TextDelegate` does not expose its render object. The delegate keeps it in a private field, because a plugin could cast it and change the text through it, read the layout at any time, or reach the painters of another plugin. The framework code that needs the render object is `TextDelegateHostMixin`, which is in the same library as `TextDelegate`. `RenderParagraph` and `RenderEditable` both use that mixin, so nothing outside the library has to reach it and no `@internal` is needed. The same holds for the state that tracks what each plugin was told: it is private to that library.
 
 One limit of the prototype: `TextDelegate.text` leaves `TextSpan.semanticsLabel` out so that offsets match what is painted. A plugin that wants the labels reads `delegate.textSpan` and calls `getSemanticsInformation()`. None of the stage 1 plugins need this.
 
@@ -457,20 +486,21 @@ class TextPluginScope extends StatefulWidget {
 `RichText` and `EditableText` forward `textPlugins ?? TextPluginScope.maybeOf(context)` to `RenderParagraph` and `RenderEditable`, which reconcile `TextDelegate`s, schedule post-layout callbacks, and paint in three steps from back to front:
 
 ```dart
-class RenderParagraph extends RenderBox { // Same host contract on RenderEditable
-  List<TextPlugin>? textPlugins; // Reconciles 1-to-1 TextDelegate instances
+// Abridged. RenderEditable uses the same mixin.
+class RenderParagraph extends RenderBox with TextDelegateHostMixin {
+  // From the mixin: `textPlugins`, which reconciles 1-to-1 TextDelegate instances.
 
   @override
   void performLayout() {
     _layoutTextWithConstraints(constraints);
-    RendererBinding.instance.addPostLayoutCallback(_flushTextPluginNotifications);
+    didLayoutTextDelegates(); // A pending didAddText or didUpdateText runs after the layout pass.
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    for (final d in _delegates) d.backgroundPainter?.paint(...); // 1. Backgrounds
-    _textPainter.paint(context.canvas, offset);                  // 2. Glyphs & spans
-    for (final d in _delegates) d.foregroundPainter?.paint(...); // 3. Foregrounds
+    paintTextPluginBackgrounds(context, offset); // 1. Each backgroundPainter.paint(canvas, layout)
+    _textPainter.paint(context.canvas, offset);  // 2. Glyphs & spans
+    paintTextPluginForegrounds(context, offset); // 3. Each foregroundPainter.paint(canvas, layout)
   }
 }
 ```
@@ -480,6 +510,8 @@ class RenderParagraph extends RenderBox { // Same host contract on RenderEditabl
 2. Paragraph glyphs and inline children (`_textPainter.paint` and `paintInlineChildren`) paint with any applicable overflow shader or clipping.
 
 3. Plugin `foregroundPainter`s run in ascending `paintOrder` (with root-to-leaf `TextPluginScope` installation order breaking ties), clipped under the same rule.
+
+For each painter call, the framework creates a `TextLayout` and passes it to `paint`. In debug mode it marks that `TextLayout` as no longer valid when `paint` returns.
 
 Stage 1 does not change how selection is painted. The existing `SelectionArea` and `EditableText` selection layers remain in place around step 2 (`_SelectableFragment.paintSelection` before `_textPainter.paint` and `_SelectableFragment.paintHandles` after `foregroundPainter`s in `RenderParagraph`; `_backgroundRenderObject` and `_foregroundRenderObject` in `RenderEditable`).
 
@@ -503,7 +535,7 @@ class SearchMatch {
   const SearchMatch({required this.delegate, required this.range});
   final TextDelegate delegate;
   final TextRange range;
-  List<ui.TextBox> getBoxes();
+  List<ui.TextBox> getBoxes(TextLayout layout); // Only while painting.
 }
 
 class SearchInPagePlugin extends TextPlugin with ChangeNotifier {
@@ -529,9 +561,6 @@ class SearchInPagePlugin extends TextPlugin with ChangeNotifier {
 
   @override
   void didUpdateText(TextDelegate delegate) { ... }
-
-  @override
-  void didLayoutText(TextDelegate delegate) { ... } // Repaints only. No rescan.
 
   @override
   void didRemoveText(TextDelegate delegate) { ... }
@@ -573,15 +602,15 @@ Instead of looping over all mounted `_delegates` on every update or match naviga
 
 1. If a delegate has no matches, both `delegate.backgroundPainter` and `delegate.foregroundPainter` are set to `null`. Because each `(RenderObject, TextPlugin)` pair has its own dedicated `TextDelegate` instance (see [Section 3.3](#33-textdelegate-proxy-for-text-render-objects)), setting `delegate.backgroundPainter = null` only clears `SearchInPagePlugin`'s painter on that paragraph and never affects painters attached by other plugins in the scope.
 
-2. Every delegate with one or more matches receives a `_SearchBackgroundPainter` on `delegate.backgroundPainter`. During step 1 of `RenderParagraph.paint` (behind the text glyphs), it queries `delegate.getBoxesForSelection(...)` and fills rounded rectangles (`Radius.circular(3.0)`) using `matchHighlightColor` for passive matches and `activeMatchBackgroundColor` for the active match.
+2. Every delegate with one or more matches receives a `_SearchBackgroundPainter` on `delegate.backgroundPainter`. During step 1 of `RenderParagraph.paint` (behind the text glyphs), it reads the boxes of each match from the `TextLayout` it receives (`match.getBoxes(layout)`) and fills rounded rectangles (`Radius.circular(3.0)`) using `matchHighlightColor` for passive matches and `activeMatchBackgroundColor` for the active match.
 
-3. Only the delegate containing `activeMatch` receives a `_SearchForegroundPainter` on `delegate.foregroundPainter`. During step 3 of `RenderParagraph.paint` (in front of the text glyphs), it strokes a `1.75px` rounded border (`activeMatchBorderColor`, inflated by `2.0px`) around the active match boxes so the focused match stands out clearly against dense text.
+3. Only the delegate containing `activeMatch` receives a `_SearchForegroundPainter` on `delegate.foregroundPainter`. During step 3 of `RenderParagraph.paint` (in front of the text glyphs), it strokes a `1.75px` rounded border (`activeMatchBorderColor`, inflated by `2.0px`) around the active match boxes, which it also reads from its `TextLayout`, so the focused match stands out clearly against dense text.
 
 #### 3.6.4 Post-layout scrolling and safe notification coalescing
 
-Because `didAddText`, `didUpdateText`, and `didLayoutText` run after layout has been flushed for the frame, `delegate.hasLayout` is already `true` whenever a delegate is added or updated:
+Because `didAddText` and `didUpdateText` run after layout has been flushed for the frame, every text that the plugin has been told about has been laid out at least once:
 
-1. Calling `scrollToActiveMatch()` from `nextMatch()` or `previousMatch()` can immediately invoke `current.delegate.ensureVisible(current.range, duration: duration, curve: curve)` because every delegate in `_matches` has already completed layout. The scroll is animated: `scrollToActiveMatch` defaults to 250 ms with `Curves.easeInOut` and passes both to `ensureVisible`. A match that is scrolled out of view inside a multi-line text field is a known gap (see [Section 7.15](#715-a-match-inside-a-scrolled-text-field)).
+1. Calling `scrollToActiveMatch()` from `nextMatch()` or `previousMatch()` invokes `current.delegate.ensureVisible(current.range, duration: duration, curve: curve)`. The plugin does not check for a layout and does not compute a rectangle. `ensureVisible` computes the rectangle of the range, and does nothing if the text has no layout at that point. The scroll is animated: `scrollToActiveMatch` defaults to 250 ms with `Curves.easeInOut` and passes both to `ensureVisible`. A match that is scrolled out of view inside a multi-line text field is a known gap (see [Section 7.15](#715-a-match-inside-a-scrolled-text-field)).
 
 2. As detailed in [Section 7.1](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose), `_notifyListenersSafely()` checks `SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks`. Because the lifecycle callbacks run inside `SchedulerPhase.persistentCallbacks`, `_notifyListenersSafely()` sets `_notificationScheduled = true` and coalesces all delegate mutations in that frame into a single `addPostFrameCallback` call to `notifyListeners()`.
 
@@ -647,7 +676,8 @@ Flutter is already slow with very large amounts of text, and this design must no
 | :--- | :--- |
 | A text with no plugin in scope | A null check in layout and in paint |
 | A text with plugins, in a frame in which it does nothing | Nothing. No callback is scheduled |
-| A text that was laid out, changed, or got a new plugin | One post-layout callback for that text, which makes one or two calls per plugin on it |
+| A text that changed, or got a new plugin | One post-layout callback for that text, which makes at most one call per plugin on it |
+| A text that was only laid out again | A loop over its delegates in layout. No callback is scheduled |
 | Painting a text | One call per painter that is set, each wrapped in a save and restore |
 | Building a scope | Merging the plugin map of the ancestor and sorting it. This is per scope, not per text |
 | Comparing two delegates for document order | Both ancestor chains to the root, then the siblings between the two branches under the common parent. Ordering many delegates at once uses one walk of the tree instead ([Section 5.1.2](#512-document-order-sorting-textdelegate-implements-comparabletextdelegate)) |
@@ -656,7 +686,9 @@ So the cost follows the amount of text that **changed** in a frame, not the amou
 
 #### 3.8.1 First measurements
 
-These numbers are from one machine: macOS desktop, profile mode, `examples/text_plugins/lib/benchmark.dart`. The benchmark was run several times while two problems were found and fixed. The two tables of frame times are from one run on the current stage 1 branch, made after the post-layout callbacks moved to the binding ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The before and after table is from the runs made when the two problems were fixed. A single number at the larger page size varies by a few milliseconds from run to run, so they show the shape of the cost, not exact values.
+> The numbers in this section, and in the table of [Section 3.7](#37-who-owns-a-plugin), were measured before the layout of the text moved from the delegate to a parameter of `paint`, when `TextPlugin` still had `didLayoutText`. They were not measured again after that change.
+
+These numbers are from one machine: macOS desktop, profile mode, `examples/text_plugins/lib/benchmark.dart`. The benchmark was run several times while two problems were found and fixed. The two tables of frame times are from one run on the stage 1 branch, made after the post-layout callbacks moved to the binding ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The before and after table is from the runs made when the two problems were fixed. A single number at the larger page size varies by a few milliseconds from run to run, so they show the shape of the cost, not exact values.
 
 The page is a column of N paragraphs that are all mounted and laid out, each in its own repaint boundary. It is measured four ways: with no `TextPluginScope`, with a scope that installs no plugin, with a plugin that does nothing, and with `SearchInPagePlugin` and an active query that matches one paragraph in ten. A frame time is the time in `drawFrame` (build, layout, plugin callbacks, paint), averaged over 20 frames. The benchmark runs the frames itself and does not wait for vsync. Raster time is not included.
 
@@ -728,7 +760,7 @@ A stage 1 plugin paints. These are the consequences, stated plainly so that the 
 | React to a tap, a long-press or hover | It receives no pointer events | Stage 2 |
 | Change the mouse cursor | It has no hit-test target | Stage 2 |
 | Be a link or a button for a screen reader, or take keyboard focus | It does not change semantics or focus | Stage 2 |
-| Show a widget: a menu, a chip, a tooltip, a blur | A `CustomPainter` only has a canvas | Stage 3 |
+| Show a widget: a menu, a chip, a tooltip, a blur | A painter only has a canvas and the layout of the text | Stage 3 |
 | Keep widget state such as an animation or a text field | Same reason. A painter can still repaint from a `Listenable` | Stage 3 |
 | Hide text from a screen reader, copy or search | Painting over glyphs does not remove the text | Not a goal ([Section 2.1](#21-goals-and-non-goals)) |
 | Change the text or its layout | Plugins are non-destructive in every stage | Not a goal |
@@ -745,7 +777,7 @@ The prototype is one branch. It lands as 16 small PRs in sequence. Every PR is g
 | **2** | `TextPlugin`, `TextDelegate`, `TextDelegateHost` interface | rendering | 400 / 200 | 1 |
 | **3** | `TextDelegateHostMixin` (lifecycle plumbing, painting) | rendering | 250 / 300 | 2 |
 | **4** | Document order: `compareTo` and `sortInDocumentOrder` | rendering | 150 / 150 | 2 |
-| **5** | `TextDelegate.showOnScreen` / `ensureVisible` | rendering | 80 / 120 | 3 |
+| **5** | `TextDelegate.ensureVisible` | rendering | 80 / 120 | 3 |
 | **6** | `RenderEditable` local geometry helpers (prep) | rendering | 45 / 80 |  |
 | **7** | `RenderParagraph` adopts the host mixin | rendering | 100 / 200 | 3 |
 | **8** | `RenderEditable` adopts the host mixin | rendering | 120 / 180 | 3, 6 |
@@ -758,13 +790,13 @@ The prototype is one branch. It lands as 16 small PRs in sequence. Every PR is g
 | **15** | `SearchInPagePlugin` + `SearchMatch` (first-party) + sample | widgets | 500 / 350 | 4, 5, 10, 14 |
 | **16** | API samples; demo app and benchmark decision | examples |  | 15 |
 
-The full plan, with the scope and the tests of each PR, is [text_plugins_implementation_plan.md](https://github.com/hannah-hyj/flutter/blob/text-plugin-mvp/text_plugins_implementation_plan.md) on the stage 1 branch.
+The full plan, with the scope and the tests of each PR, is [text_plugins_implementation_plan.md](https://github.com/hannah-hyj/flutter/blob/text-plugin-mvp/text_plugins_implementation_plan.md) on the stage 1 branch. The plan was written before the layout moved to a parameter of `paint`. It still lists `didLayoutText`, the geometry members of `TextDelegate`, and `showOnScreen`.
 
 ---
 
 ## 4. Community package use cases
 
-`TextPlugin` combines text inspection (`text`, `placeholderRanges`), sub-span geometry (`getBoxesForSelection`, `getPositionForOffset`, `getWordBoundary`), custom painting (`backgroundPainter`, `foregroundPainter`), and viewport control (`ensureVisible`, `compareTo`, `needsOffscreenContent`, `paintOrder`). Together, these primitives support drop-in packages across any `Text`, `RichText`, or `EditableText` subtree.
+`TextPlugin` combines text inspection (`text`, `placeholderRanges`), sub-span geometry while painting (`TextLayout.getBoxesForSelection`, `getPositionForOffset`, `getWordBoundary`), custom painting (`backgroundPainter`, `foregroundPainter`), and viewport control (`ensureVisible`, `compareTo`, `needsOffscreenContent`, `paintOrder`). Together, these primitives support drop-in packages across any `Text`, `RichText`, or `EditableText` subtree.
 
 ### 4.1 Use cases implemented in the demo app
 
@@ -772,7 +804,7 @@ Alongside `SearchInPagePlugin` (covered in [Section 3.6](#36-first-party-searchi
 
 #### 1. TTS read-aloud karaoke synchronizer (`ReadAloudPlugin`)
 
-`ReadAloudPlugin` sorts mounted `TextDelegate`s in visual reading order with `TextDelegate.sortInDocumentOrder` and tokenizes words while skipping `0xFFFC` `WidgetSpan` placeholders. It tints the active paragraph in `backgroundPainter`, paints a pill highlight over the spoken word in `foregroundPainter`, and calls `delegate.ensureVisible(wordRange)` when narration crosses a paragraph boundary. Updating word highlights via `CustomPainter` and `TextDelegate.markNeedsPaint()` avoids rebuilding or re-laying out `RenderParagraph` on every word boundary.
+`ReadAloudPlugin` sorts mounted `TextDelegate`s in visual reading order with `TextDelegate.sortInDocumentOrder` and tokenizes words while skipping `0xFFFC` `WidgetSpan` placeholders. It tints the active paragraph in `backgroundPainter`, paints a pill highlight over the spoken word in `foregroundPainter`, and calls `delegate.ensureVisible(wordRange)` when narration crosses a paragraph boundary. Updating word highlights through its `TextPluginPainter`s avoids rebuilding or re-laying out `RenderParagraph` on every word boundary.
 
 #### 2. Read-only spellcheck and style-guide linter (`SpellcheckLinterPlugin`)
 
@@ -790,9 +822,9 @@ Alongside `SearchInPagePlugin` (covered in [Section 3.6](#36-first-party-searchi
 
 Beyond the plugins implemented in the demo app, the same `TextPlugin` primitives can support other community packages. Ideas that only paint work in stage 1. Ideas that react to hover, a tap or a long-press, or that show a popup, need stage 2 or 3:
 
-- Inline dictionary, translation, and furigana popovers triggered by hover or long-press via `getPositionForOffset` and `getWordBoundary`, or focus reading rulers that dim surrounding lines in `foregroundPainter`.
+- Inline dictionary, translation, and furigana popovers triggered by hover or long-press on a word, or focus reading rulers that dim surrounding lines in `foregroundPainter`.
 - Staging-build QA detectors that highlight untranslated l10n keys (`auth.login.button_title`), broken interpolation placeholders (`{userName}`), or typography widows and orphans.
-- Collaborative document annotations, persistent user highlights, and multiplayer presence carets positioned via `getOffsetForCaret`.
+- Collaborative document annotations, persistent user highlights, and multiplayer presence carets positioned via `TextLayout.getOffsetForCaret`.
 - AI source-attribution citations, 120fps shader shimmer effects driven by an `AnimationController` on `foregroundPainter` without text relayout, and smart entity links for log viewers (UUIDs, Git SHAs, `file.dart:123:45` stack traces, and timestamps).
 
 ---
@@ -815,27 +847,32 @@ The third item is **off by default**. It is about content that the app already h
 
 #### 5.1.1 Scrolling to a specific character range (`TextDelegate.ensureVisible`)
 
-Scrolling to an entire `RenderParagraph` (`showOnScreen(rect: null)`) is not enough when a paragraph spans multiple screens or when a nested scroll view clips part of a line.
+Scrolling to an entire `RenderParagraph` (`RenderObject.showOnScreen` with no rectangle) is not enough when a paragraph spans multiple screens or when a nested scroll view clips part of a line.
 
-`TextDelegate.ensureVisible` computes the glyph bounding rectangle for any `TextRange` and reveals it across all enclosing viewports:
+`TextDelegate.ensureVisible` computes the glyph bounding rectangle for any `TextRange` and reveals it across all enclosing viewports. The plugin passes only the range. The framework reads the layout itself, so the plugin does not need a `TextLayout` for this (abridged):
 
 ```dart
 void ensureVisible(ui.TextRange range, {Duration duration = Duration.zero, Curve curve = Curves.ease}) {
-  assert(hasLayout);
   // While a frame is being produced, the scroll waits for the end of the frame (Section 7.16).
-  final List<ui.TextBox> boxes = getBoxesForSelection(
+  if (_deferScrollToEndOfFrame(() => ensureVisible(range, duration: duration, curve: curve))) {
+    return;
+  }
+  if (!_hasLayout) {
+    return; // Nothing happens if the text has no layout at this point.
+  }
+  final List<ui.TextBox> boxes = _getBoxesForSelection(
     TextSelection(baseOffset: range.start, extentOffset: range.end),
     boxHeightStyle: ui.BoxHeightStyle.max,
   );
-  // Union glyph boxes (or fall back to the caret rect at `range.start` if empty):
+  // Union of the glyph boxes, or the caret rectangle at `range.start` if there are none:
   final Rect targetRect = boxes.isNotEmpty
       ? boxes.map((b) => b.toRect()).reduce((a, b) => a.expandToInclude(b))
       : _caretRectAt(range.start);
-  showOnScreen(rect: targetRect, duration: duration, curve: curve);
+  _host.showOnScreen(descendant: _host, rect: targetRect, duration: duration, curve: curve);
 }
 ```
 
-When `showOnScreen` runs, `_paragraph.showOnScreen(descendant: _paragraph, rect: targetRect, duration: duration, curve: curve)` walks up the `RenderObject.parent` chain.
+`_host` is the render object of the text, and `_host.showOnScreen` is `RenderObject.showOnScreen`. It walks up the `RenderObject.parent` chain.
 
 Each enclosing [RenderViewportBase](https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/rendering/viewport.dart) invokes `RenderViewportBase.showInViewport`. It queries `viewport.getOffsetToReveal(descendant, 0.0, rect: rect)` for the leading edge and `viewport.getOffsetToReveal(descendant, 1.0, rect: rect)` for the trailing edge.
 
@@ -843,7 +880,7 @@ If `targetRect` is already visible between the leading and trailing edges of the
 
 `duration` and `curve` are passed through, so the scroll can be animated. `Duration.zero` jumps.
 
-Both `ensureVisible` and `showOnScreen` can be called from a lifecycle callback. While a frame is being produced they scroll at the end of that frame, and otherwise right away ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
+`ensureVisible` can be called from a lifecycle callback. While a frame is being produced it scrolls at the end of that frame, and otherwise right away ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). If the text has no layout when the scroll runs, nothing happens.
 
 One case is not covered: a range inside a multi-line text field that is scrolled out of view *inside the field*. See [Section 7.15](#715-a-match-inside-a-scrolled-text-field).
 
@@ -853,7 +890,7 @@ One case is not covered: a range inside a multi-line text field that is scrolled
 
 When a user starts in the middle of a `ListView.builder` (such as `Item 10`) and scrolls upward, `RenderSliverList` mounts `Item 9`, then `Item 8`, then `Item 7`. As a result, `didAddText` fires in the order `[Item 10, Item 9, Item 8, Item 7]`. If `SearchInPagePlugin` iterates over `_delegates` in registration order, pressing "Next Match" jumps backward up the document.
 
-Comparing global screen coordinates (`localToGlobal(Offset.zero).dy`) also fails for general layouts. Two side-by-side columns or wrapped flex items can have overlapping vertical coordinates even though they have a well-defined reading order in the widget tree.
+Ordering by screen position is not an option either. A plugin cannot read screen coordinates, and screen position fails for general layouts anyway. Two side-by-side columns or wrapped flex items can have overlapping vertical coordinates even though they have a well-defined reading order in the widget tree.
 
 We solve this with Lowest Common Ancestor (LCA) render-tree traversal:
 
@@ -862,6 +899,8 @@ We solve this with Lowest Common Ancestor (LCA) render-tree traversal:
 2. `TextDelegate.compareTo` walks up `RenderObject.parent` from the render objects of both delegates to find their lowest common ancestor (`commonParent`) and the two diverging child branches (`thisBranch` and `otherBranch`).
 
 3. It checks which of the two branches comes first under the common parent. For a parent that keeps a sibling list (`RenderFlex`, `RenderWrap`, `RenderSliverList`) it walks that list. For any other parent it calls `commonParent.visitChildren(...)`. Both follow the child order from `firstChild` to `lastChild`, so the result is top-to-bottom document order even when children are prepended during upward scrolling.
+
+Document order is valid inside `didAddText`. The callback runs after layout, when the new text is linked into the child list of its parent ([Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout)).
 
 #### Performance characteristics of LCA sorting
 
@@ -963,7 +1002,7 @@ for (final TextBox textBox in paragraph.getBoxesForSelection(selection)) {
 }
 ```
 
-Because this is the same operation performed by a plugin `backgroundPainter`, `SelectableRegion` can install a `_SelectionHighlightTextPlugin` via `TextPluginScope` that reads the paragraph's active selection from `TextDelegate` and paints the highlight boxes.
+Because this is the same operation performed by a plugin `backgroundPainter`, `SelectableRegion` can install a `_SelectionHighlightTextPlugin` via `TextPluginScope` that reads the paragraph's active selection from `TextDelegate` and paints the highlight boxes. Its painter is a `TextPluginPainter`. It reads `selections` and `selectionColor` from the delegate, and the boxes from the `TextLayout` it receives (`layout.getBoxesForSelection(selection)`).
 
 Moving selection highlight painting into a `TextPlugin` simplifies `RenderParagraph.paint` and allows apps to customize how selection highlights look (such as rounded selection corners or collaborative cursors) using the standard plugin pipeline.
 
@@ -992,7 +1031,7 @@ If plugin paint order were locked strictly to root-to-leaf widget tree nesting, 
 
 ##### 2. Per-widget `Text(selectionColor: ...)` and inline `WidgetSpan`s
 
-A single `_SelectionHighlightTextPlugin` installed at the root `SelectableRegion` only knows the default selection color from `DefaultSelectionStyle`. If a descendant `Text('Warning', selectionColor: Colors.red)` overrides its selection color, or if a `Text.rich` contains inline `WidgetSpan`s that split the paragraph into multiple selectable ranges, the plugin cannot render accurately unless `TextDelegate` exposes per-paragraph `selectionColor` and `selections` (where `getBoxesForSelection` defaults to `includePlaceholders: false` so inline widgets are not highlighted).
+A single `_SelectionHighlightTextPlugin` installed at the root `SelectableRegion` only knows the default selection color from `DefaultSelectionStyle`. If a descendant `Text('Warning', selectionColor: Colors.red)` overrides its selection color, or if a `Text.rich` contains inline `WidgetSpan`s that split the paragraph into multiple selectable ranges, the plugin cannot render accurately unless `TextDelegate` exposes per-paragraph `selectionColor` and `selections` (where `TextLayout.getBoxesForSelection` defaults to `includePlaceholders: false` so inline widgets are not highlighted).
 
 ##### 3. Plugin opt-out (`TextPluginScope.none` versus `TextPluginScope.exclude`)
 
@@ -1000,9 +1039,9 @@ If a developer wraps a sidebar in `TextPluginScope.none` so `SeoExtractorPlugin`
 
 ##### 4. Mobile drag handles and cross-widget selection
 
-While `CustomPainter` can draw selection rectangles on a `Canvas`, it cannot replace the rest of `_SelectableFragment` inside `RenderParagraph`:
+While a plugin painter can draw selection rectangles on a `Canvas`, it cannot replace the rest of `_SelectableFragment` inside `RenderParagraph`:
 
-1. Mobile selection drag handles (the teardrop handles on Android and iOS) require pushing composited `LeaderLayer`s (`context.pushLayer(LeaderLayer(...))`) into the `PaintingContext` during `RenderParagraph.paint`. A `CustomPainter` only receives a `Canvas` and cannot push composited layers.
+1. Mobile selection drag handles (the teardrop handles on Android and iOS) require pushing composited `LeaderLayer`s (`context.pushLayer(LeaderLayer(...))`) into the `PaintingContext` during `RenderParagraph.paint`. A `TextPluginPainter` only receives a `Canvas` and a `TextLayout`, and cannot push composited layers.
 
 2. `SelectionArea` coordinates selection gestures across both text (`RenderParagraph`) and non-text widgets (such as selectable images), so `RenderParagraph` must still register its selectable fragments with `SelectionRegistrar`.
 
@@ -1012,9 +1051,9 @@ While `CustomPainter` can draw selection rectangles on a `Canvas`, it cannot rep
 
 | Selection Responsibility | Can be a `TextPlugin`? | Architectural Reason |
 | :--- | :--- | :--- |
-| **Drawing selection highlight boxes** | **Yes** | Maps directly to `TextDelegate.backgroundPainter` + `getBoxesForSelection(...)`, provided `TextDelegate` exposes `selections` and `selectionColor`. |
+| **Drawing selection highlight boxes** | **Yes** | Maps directly to `TextDelegate.backgroundPainter` + `TextLayout.getBoxesForSelection(...)`, provided `TextDelegate` exposes `selections` and `selectionColor`. |
 | **Custom selection styles (rounded rects, animations)** | **Yes** | Custom `TextPlugin` painters can draw any `Canvas` decoration behind or in front of selected glyphs. |
-| **Mobile drag handle positioning (`LeaderLayer`)** | **No (not via `CustomPainter`)** | Requires `PaintingContext.pushLayer(LeaderLayer(...))` and `alwaysNeedsCompositing` on `RenderParagraph`. |
+| **Mobile drag handle positioning (`LeaderLayer`)** | **No (not via a plugin painter)** | Requires `PaintingContext.pushLayer(LeaderLayer(...))` and `alwaysNeedsCompositing` on `RenderParagraph`. |
 | **Gesture dispatch and cross-widget selection** | **No** | Handled by `SelectableRegion` and `SelectionRegistrar` across both text and non-text `Selectable` render objects. |
 
 #### 5.2.4 Follow-up roadmap: what it would take to migrate `SelectionArea` to `TextPlugin`
@@ -1075,11 +1114,19 @@ Users searching a page (`Ctrl+F` via `SearchInPagePlugin`) or listening to an ar
 `TextDelegateHostMixin` on `RenderBox` is what `RenderParagraph` and `RenderEditable` use themselves. It provides the `textPlugins` setter, post-layout `TextDelegate` flush scheduling (`markNeedsTextDelegateUpdate()`, `didLayoutTextDelegates()`), and painter hooks (`paintTextPluginBackgrounds`, `paintTextPluginForegrounds`). Any custom `RenderBox` that paints text directly with `TextPainter` can mix in `TextDelegateHostMixin` to participate in `TextPluginScope`:
 
 ```dart
+// Abridged.
 mixin TextDelegateHostMixin on RenderBox {
+  // What the render object has to provide.
   String get plainText;
   InlineSpan get textSpan => TextSpan(text: plainText);
   ui.TextDirection get textDirection;
   List<ui.TextBox> getBoxesForSelection(TextSelection selection, { ... });
+
+  // More geometry, with defaults. The render object overrides what it can answer.
+  ui.TextPosition getPositionForOffset(Offset offset);
+  ui.TextRange getWordBoundary(ui.TextPosition position);
+  Offset getOffsetForCaret(ui.TextPosition position, Rect caretPrototype);
+  double getFullHeightForCaret(ui.TextPosition position);
 
   List<TextPlugin>? textPlugins;
 
@@ -1092,6 +1139,7 @@ mixin TextDelegateHostMixin on RenderBox {
 class RenderCustomBadgeText extends RenderBox with TextDelegateHostMixin {
   // Widget forwards `textPlugins ?? TextPluginScope.maybeOf(context)`.
   // Label setter updates `_textPainter.text` and calls `markNeedsTextDelegateUpdate()`.
+  // The `textDirection` getter is omitted for brevity.
   final TextPainter _textPainter;
 
   @override
@@ -1116,6 +1164,10 @@ class RenderCustomBadgeText extends RenderBox with TextDelegateHostMixin {
   }
 }
 ```
+
+The geometry methods (`getBoxesForSelection` and the others) are members of the render object, not of `TextDelegate`. A plugin does not call them. The framework calls them to answer the queries of a `TextLayout` while a painter paints, and to compute the rectangle for `ensureVisible`.
+
+`didLayoutTextDelegates()` does not tell the plugins about the layout. It records that the render object has a layout, so that a pending `didAddText` or `didUpdateText` runs after the layout pass.
 
 #### 2. Concrete example: simple non-text widget (`LabeledColorBox` / `Image` / `Icon`)
 
@@ -1160,11 +1212,11 @@ While whole-widget highlighting works well for Search, TTS, and SEO, character-l
 
 #### 3. Complex non-text widgets (`BarChart`, `Sparkline`): widget-owned highlight rendering
 
-A complex widget such as a `BarChart` or `Sparkline` may want to control how matched content is highlighted. A rectangular `CustomPainter` overlay does not know how to highlight a specific bar, pie slice, or sparkline vertex.
+A complex widget such as a `BarChart` or `Sparkline` may want to control how matched content is highlighted. A plugin painter that draws rectangles does not know how to highlight a specific bar, pie slice, or sparkline vertex.
 
 In `Ctrl+F` (`SearchInPagePlugin`) or TTS (`ReadAloudPlugin`), the plugin owns the document-wide coordinator state (the active search query, the `"3 of 12"` match count, and Next/Previous navigation). Meanwhile, the `BarChart` widget owns the domain-specific rendering of its data series.
 
-We can separate match discovery (owned by the plugin) from highlight rendering (owned by the widget or host) by passing structured highlight ranges to `TextDelegate`, with the plugin's `CustomPainter` acting as the default fallback when a widget does not override highlight rendering:
+We can separate match discovery (owned by the plugin) from highlight rendering (owned by the widget or host) by passing structured highlight ranges to `TextDelegate`, with the plugin's painter acting as the default fallback when a widget does not override highlight rendering:
 
 ```dart
 class TextPluginHighlight {
@@ -1182,15 +1234,15 @@ class TextPluginHighlight {
 
 First, a `BarChart` exposes its data labels to `TextDelegate` (for example, `"Q1: $10M\nQ2: $15M\nQ3: $22M\nQ4: $18M"`).
 
-Second, when `SearchInPagePlugin` queries `delegate.getBoxesForSelection(rangeForQ3)` for `ensureVisible`, the `BarChart` returns the bounding `Rect` of the Q3 bar so `Ctrl+F` scrolls directly to that bar.
+Second, when `SearchInPagePlugin` calls `delegate.ensureVisible(rangeForQ3)`, the framework asks the `BarChart` render object for the boxes of that range (`getBoxesForSelection`). The `BarChart` returns the bounding `Rect` of the Q3 bar, so `Ctrl+F` scrolls directly to that bar.
 
 Third, instead of painting a flat yellow rectangle over the chart, the `BarChart` receives the active `List<TextPluginHighlight>`, maps range `18..26` (`"Q3: $22M"`) back to `barIndex = 2`, and highlights that bar or sparkline vertex using its own graphics.
 
 #### Summary across target widgets
 
-| Target Widget | How `TextDelegate.text` Is Provided | How `getBoxesForSelection(range)` Works | Who Renders the Highlight? |
+| Target Widget | How `TextDelegate.text` Is Provided | How the Render Object's `getBoxesForSelection(range)` Works | Who Renders the Highlight? |
 | :--- | :--- | :--- | :--- |
-| **Standard `Text` / `EditableText`** | `InlineSpan.toPlainText(includeSemanticsLabels: false)` | `TextPainter` glyph boxes | **Plugin's default painter** (`CustomPainter` on `RenderParagraph`) |
+| **Standard `Text` / `EditableText`** | `InlineSpan.toPlainText(includeSemanticsLabels: false)` | `TextPainter` glyph boxes | **Plugin's default painter** (`TextPluginPainter` on `RenderParagraph`) |
 | **Custom `TextPainter` `RenderBox`** | `TextPainter.plainText` via `TextDelegateHostMixin` | `TextPainter.getBoxesForSelection` | **Plugin's default painter** (`paintTextPluginBackgrounds` / `Foregrounds`) |
 | **Simple `Image` / `Icon`** | `semanticLabel` | Whole widget bounding box (`0..w, 0..h`) | **Plugin's default painter** (or foreground border/tint) |
 | **Complex Graphic (`BarChart`, `Sparkline`)** | Concatenated series / datum labels | Bounding box of the matched bar / datum | **The Chart Widget itself** (glows bar, pulses sparkline point, elevates slice) |
@@ -1204,19 +1256,19 @@ On Web and mobile platforms, apps may embed platform-rendered text fields or HTM
 
 On Web (`HtmlElementView`), the W3C `Range` API and W3C CSS Custom Highlight API (`CSS.highlights` and `::highlight()`) use the same non-destructive decoration model as `TextPlugin`:
 
-| `TextDelegate` Capability | Flutter (`RenderParagraph` / `RenderEditable`) | Web Platform View (W3C DOM APIs) | iOS / Android Native Text Views |
+| Capability of `TextDelegate` or `TextLayout` | Flutter (`RenderParagraph` / `RenderEditable`) | Web Platform View (W3C DOM APIs) | iOS / Android Native Text Views |
 | :--- | :--- | :--- | :--- |
 | **`text`** | `InlineSpan.toPlainText(includeSemanticsLabels: false)` | `element.textContent` | `UITextView.text` / `EditText.getText()` |
-| **`getBoxesForSelection(range)`** | `ui.Paragraph.getBoxesForRange` | `Range.getClientRects()` (mapped to local `RenderBox` coordinates) | `UITextInput.selectionRects(for:)` / `Layout.getSelectionPath` |
-| **`getPositionForOffset(point)`** | `TextPainter.getPositionForOffset` | `document.caretPositionFromPoint(x, y)` | `UITextInput.closestPosition(to:)` / `Layout.getOffsetForHorizontal` |
+| **`TextLayout.getBoxesForSelection(range)`** | `ui.Paragraph.getBoxesForRange` | `Range.getClientRects()` (mapped to local `RenderBox` coordinates) | `UITextInput.selectionRects(for:)` / `Layout.getSelectionPath` |
+| **`TextLayout.getPositionForOffset(point)`** | `TextPainter.getPositionForOffset` | `document.caretPositionFromPoint(x, y)` | `UITextInput.closestPosition(to:)` / `Layout.getOffsetForHorizontal` |
 | **`ensureVisible(range)`** | `RenderObject.showOnScreen(rect)` | `Range.getBoundingClientRect()` + `scrollIntoView` / `showOnScreen` | `UITextView.scrollRangeToVisible` |
-| **Range Decoration** | `CustomPainter` (`backgroundPainter` / `foregroundPainter`) | **`CSS.highlights.set(id, new Highlight(range))`** + `::highlight(id)` | `NSLayoutManager` temporary attributes / `Spannable` `CharacterStyle` |
+| **Range Decoration** | `TextPluginPainter` (`backgroundPainter` / `foregroundPainter`) | **`CSS.highlights.set(id, new Highlight(range))`** + `::highlight(id)` | `NSLayoutManager` temporary attributes / `Spannable` `CharacterStyle` |
 
 To support platform views without breaking existing plugins:
 
 1. `TextDelegate` can delegate text, geometry, and painting hooks to a `TextDelegateHost` interface that Platform View render objects can also implement.
 
-2. A Flutter `CustomPainter` cannot paint between a native platform view's background and its text glyphs, and a canvas overlay cannot stay frame-synchronized with internal DOM compositor scrolling. Adding a declarative highlight method on `TextDelegate` (`setHighlights(Object pluginKey, List<TextHighlight> highlights)`) alongside `CustomPainter` lets `RenderParagraph` and `RenderEditable` paint ranges with an internal `CustomPainter`, while Web Platform Views translate those ranges into W3C `Range` instances registered in `CSS.highlights` (`::highlight()`).
+2. A Flutter painter cannot paint between a native platform view's background and its text glyphs, and a canvas overlay cannot stay frame-synchronized with internal DOM compositor scrolling. Adding a declarative highlight method on `TextDelegate` (`setHighlights(Object pluginKey, List<TextHighlight> highlights)`) alongside the painter slots lets `RenderParagraph` and `RenderEditable` paint ranges with an internal painter, while Web Platform Views translate those ranges into W3C `Range` instances registered in `CSS.highlights` (`::highlight()`).
 
 3. In browsers, W3C `Range` and `CSS.highlights` operate on DOM `Text` nodes. Because HTML `<input>` and `<textarea>` store their text inside a closed User-Agent shadow root (`.value`), native web text fields using `CSS.highlights` need a DOM node that keeps its text in `Text` nodes, such as a synchronized mirror node, so character offsets map to DOM `Text` nodes. A `<div contenteditable="plaintext-only">` would also do that, but it does not support autofill, so it cannot replace `<input>`.
 
@@ -1232,7 +1284,7 @@ Suppose a search bar widget at the top of the screen listens to `SearchInPagePlu
 
 When the user scrolls a `ListView` and a new `Text` item mounts on screen, `searchPlugin.didAddText(delegate)` is called while Flutter is in the middle of producing the frame, right after layout (`SchedulerPhase.persistentCallbacks`). Inside `didAddText`, `SearchInPagePlugin` scans the new paragraph and finds a sixth match (`"1 of 6 matches"`).
 
-If `SearchInPagePlugin` calls `notifyListeners()` synchronously inside `didAddText` (or inside `didUpdateText`, `didLayoutText`, or `didRemoveText`), the search bar widget will call `setState()` in the middle of the frame, after the build phase has finished. In debug mode Flutter then throws "Build scheduled during frame".
+If `SearchInPagePlugin` calls `notifyListeners()` synchronously inside `didAddText` (or inside `didUpdateText` or `didRemoveText`), the search bar widget will call `setState()` in the middle of the frame, after the build phase has finished. In debug mode Flutter then throws "Build scheduled during frame".
 
 To avoid this crash, plugins separate canvas repaints from external widget notifications:
 
@@ -1241,7 +1293,24 @@ To avoid this crash, plugins separate canvas repaints from external widget notif
 
 ---
 
-### 7.2 Why `didAddText`, `didUpdateText`, and `didLayoutText` are flushed post-layout
+### 7.2 Why `didAddText` and `didUpdateText` run after layout
+
+`RenderParagraph` and `RenderEditable` schedule `didAddText` and `didUpdateText` with `RendererBinding.addPostLayoutCallback`. The binding runs these callbacks in `drawFrame`, after the root pipeline owner has flushed layout and right before painting (see [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
+
+This timing is the same as it was when a plugin could read geometry from the delegate. The reasons for it are not the same. The old reasons were all about reading geometry inside a callback. A callback cannot read geometry any more ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)), so they no longer apply. They are kept below as history.
+
+#### The reasons today
+
+1. **Document order.** A render object is attached before it is linked into the child list of its parent. `ContainerRenderObjectMixin.insert` calls `adoptChild` first, which attaches the child, and only then puts the child into the list. A `didAddText` that ran synchronously at attach would see a text that has a parent but no place among its siblings, so `TextDelegate.compareTo` could not place it. `SearchInPagePlugin` needs document order in `didAddText` to keep its matches in order ([Section 3.6.2](#362-incremental-per-delegate-match-indexing-and-active-match-preservation)). After layout the text is in the list. The test 'Document order is valid in didAddText for a text inserted between its siblings' covers this.
+2. **Text that is created during layout.** Running the callbacks after build would not be enough either. A lazy list (`ListView`) and a `LayoutBuilder` create their children during layout. The end of layout is the first moment in a frame when every text of that frame is in the tree.
+3. **One callback per frame.** A pending update is a flag on the delegate, and the post-layout flush clears it. A text whose string changes twice in a frame is reported once.
+4. **Misuse is still checked.** While the callbacks run, marking a render object as needing layout throws the "was mutated during a post-layout callback" assertion ([Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)). The test 'A plugin that dirties layout in a lifecycle callback gets a clear error' covers this.
+
+A painter that a plugin sets in a callback paints in the same frame, because the callbacks run before paint. The test 'Lifecycle callbacks run after layout, and a painter they set paints in that frame' covers this.
+
+#### History: four findings about geometry in callbacks
+
+The members named in this subsection (`delegate.hasLayout`, `delegate.size`, `delegate.getBoxesForSelection`, `delegate.localToGlobal`, and the `didLayoutText` callback) existed in earlier versions of the prototype. They are removed now.
 
 In an early iteration of the prototype, `didAddText` ran synchronously inside `attach()` / `updateRenderObject()` (during `buildScope`), `didUpdateText` ran synchronously inside `RenderParagraph.text = ...` (immediately after `markNeedsLayout()`), and `didLayoutText` ran at the end of `RenderParagraph.performLayout()`. Empirical testing uncovered four subtle bugs with that timing:
 
@@ -1250,11 +1319,11 @@ In an early iteration of the prototype, `didAddText` ran synchronously inside `a
 3. **`RenderObject.debugActiveLayout` assertions**: While any `RenderObject` is inside `performLayout()`, `RenderObject.debugActiveLayout` is non-null, causing `otherDelegate.size` to fail an assertion in `RenderBox.size`.
 4. **Unpositioned parent offsets**: Inside `RenderParagraph.performLayout()`, parent containers (`RenderFlex`, `RenderSliverList`) have not yet set `childParentData.offset` on the child, so `delegate.localToGlobal(Offset.zero)` returned unpositioned coordinates.
 
-To solve all four issues:
+At that time the fix was to move the callbacks to after layout, and to give the delegate a `hasLayout` getter that was accurate in release builds.
 
-1. `TextDelegate` tracks a dedicated `_hasValidLayout` boolean (set to `false` in `markNeedsLayout()` and `true` at the end of `performLayout()`), so `delegate.hasLayout` is accurate in both debug and release builds.
-2. `RenderParagraph` and `RenderEditable` schedule `didAddText`, `didUpdateText`, and `didLayoutText` with `RendererBinding.addPostLayoutCallback`. The binding runs these callbacks in `drawFrame`, after the root pipeline owner has flushed layout and right before painting. All dirty `RenderObject`s in every render tree have exited `layout()` and finalized parent offsets by then (see [Section 7.16](#716-what-a-plugin-may-do-in-a-lifecycle-callback)).
-3. As a result, `delegate.hasLayout` is guaranteed to be `true` in all three callbacks (`didAddText`, `didUpdateText`, and `didLayoutText`), all geometry and coordinate queries (`getBoxesForSelection`, `size`, `localToGlobal`) succeed immediately, and painters set in those callbacks paint in the same frame.
+These four findings no longer apply. `TextDelegate` has no geometry, and `didLayoutText` is removed. A callback has nothing to read that could be stale or unpositioned. The findings are kept because they explain why geometry is not offered in callbacks: at each of those moments, some part of the layout was not final. A painter does not have this problem. It runs in the paint phase, after all layout of the frame, and it receives the layout as a `TextLayout` that is valid only during that `paint` call ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)).
+
+One part of the old fix is still in the framework, and it is private. The delegate keeps a flag that says whether the render object has an up-to-date layout, in debug and in release builds. It is set to `false` in `markNeedsLayout()` and to `true` at the end of `performLayout()`. `ensureVisible` uses it, so that it does nothing when the text has no layout.
 
 ---
 
@@ -1278,11 +1347,11 @@ Inside `TextPainter` and `ui.Paragraph`, every `PlaceholderSpan` occupies 1 UTF-
 
 If `delegate.text` omitted placeholders (`includePlaceholders: false`), `' GOOG today'` would start at index `4` in `delegate.text`, but at offset `5` in `TextPainter`. Passing `TextSelection(baseOffset: 4, extentOffset: 8)` to `getBoxesForSelection` would highlight `'GOO'` instead of `'GOOG'`. Conversely, if `delegate.text` used `includeSemanticsLabels: true` (the default of `InlineSpan.toPlainText()`), a `TextSpan(text: 'GOOG', semanticsLabel: 'Alphabet Inc.')` would return `'Alphabet Inc.'` in `delegate.text`, desynchronizing string indices from `TextPainter` glyph offsets and causing plugins to process accessibility label overrides instead of visible text.
 
-To make this impossible to get wrong, `TextDelegate` enforces an opinionated contract:
+To make this impossible to get wrong, the framework fixes the contract:
 
 1. `TextDelegate.text` always calls `_paragraph.text.toPlainText(includeSemanticsLabels: false)` internally (preserving `\uFFFC` placeholder code units and ignoring `semanticsLabel`). Plugin authors simply read `delegate.text` and never call `InlineSpan.toPlainText` directly.
 2. Because `\uFFFC` is not a word character (`\w`) or whitespace (`\s`), regex patterns like `\bGOOG\b` naturally treat adjacent `WidgetSpan`s as word boundaries without shifting character indices.
-3. `TextDelegate.getBoxesForSelection` defaults to `includePlaceholders: false`, automatically splitting any selection range around `delegate.placeholderRanges` so multi-word matches never highlight across an inline `WidgetSpan`.
+3. `TextLayout.getBoxesForSelection` defaults to `includePlaceholders: false`, automatically splitting any selection range around `delegate.placeholderRanges` so multi-word matches never highlight across an inline `WidgetSpan`.
 
 ---
 
@@ -1302,7 +1371,7 @@ A single logical substring (such as a long URL wrapping across two lines, or an 
 
 In addition, Dart `String` indices and `TextSelection` offsets are UTF-16 code units. Characters outside the Basic Multilingual Plane (such as emoji characters like U+1F680 or regional indicator flag pairs) occupy 2 or more UTF-16 code units.
 
-Plugins should iterate over every `ui.TextBox` returned by `delegate.getBoxesForSelection(...)` when painting. When scrolling a multi-line match into view (`SearchInPagePlugin.scrollToActiveMatch`), `TextDelegate.ensureVisible` computes the bounding union of all boxes (`boxes.map((b) => b.toRect()).reduce((a, b) => a.expandToInclude(b))`) and passes it to `showOnScreen(rect: bounds)`.
+Plugins should iterate over every `ui.TextBox` returned by `layout.getBoxesForSelection(...)` when painting. When scrolling a multi-line match into view (`SearchInPagePlugin.scrollToActiveMatch`), `TextDelegate.ensureVisible` computes the bounding union of all boxes (`boxes.map((b) => b.toRect()).reduce((a, b) => a.expandToInclude(b))`) and asks the render object to show that rectangle.
 
 ---
 
@@ -1312,7 +1381,7 @@ Suppose a user toggles a single plugin on or off in `TextPluginScope.multiple(pl
 
 If `RenderParagraph` disposed all delegates and recreated them whenever `textPlugins` changed, `stockPlugin` and `readAloudPlugin` would receive unnecessary `didRemoveText` and `didAddText` calls on every toggle, losing any per-delegate state cached by `stockPlugin`.
 
-In `RenderParagraph._syncTextPluginDelegates`, we diff the existing `_textPluginDelegates` keys against `newPlugins`:
+In `TextDelegateHostMixin._syncTextPluginDelegates`, which `RenderParagraph` and `RenderEditable` use, we diff the existing `_textPluginDelegates` keys against `newPlugins`:
 
 1. Only plugins removed from `newPlugins` have their `TextDelegate` detached, notified via `plugin.didRemoveText(delegate)`, and disposed.
 
@@ -1377,7 +1446,7 @@ Document-wide plugins such as `SearchInPagePlugin` handle upward scroll mount or
 
 All plugin `backgroundPainter`s and `foregroundPainter`s share `PaintingContext.canvas` with `RenderParagraph`. A buggy plugin painter that calls `canvas.save()` without `canvas.restore()`, or mutates the canvas transform without restoring, could corrupt the rendering of subsequent plugins, the paragraph text itself, or sibling widgets in the same repaint boundary.
 
-`RenderParagraph._paintWithCustomPainter` wraps each individual plugin painter call in its own `canvas.save()`, `canvas.translate(offset.dx, offset.dy)`, and `canvas.restore()` pair. In debug mode, it records `canvas.getSaveCount()` before and after `painter.paint(canvas, size)` and throws a `FlutterError` naming the offending `CustomPainter` if its `save()` and `restore()` calls are unbalanced. The check exists in `RenderParagraph` and `RenderEditable`. `TextDelegateHostMixin` saves and restores around each painter but does not check the count yet.
+`TextDelegateHostMixin._paintWithTextPluginPainter` wraps each individual plugin painter call in its own `canvas.save()`, `canvas.translate(offset.dx, offset.dy)`, and `canvas.restore()`. In debug mode, it records `canvas.getSaveCount()` before and after `painter.paint(canvas, layout)` and throws a `FlutterError` if the `save()` and `restore()` calls of the painter are unbalanced. The error names the painter. For a missing `restore()` it starts with "The … text plugin painter called canvas.save() or canvas.saveLayer() at least". `RenderParagraph`, `RenderEditable` and a custom render object all use the mixin, so they all go through this one check. A test covers it for `Text` and `EditableText`.
 
 ---
 
@@ -1427,9 +1496,13 @@ The fix belongs in the delegate, as review suggested: for an editable text, firs
 
 The callbacks run after layout and before paint. In a callback, a plugin may:
 
-- read text and geometry from the delegate,
+- read the text from the delegate,
+- compare delegates for document order,
 - set or clear its painters,
-- ask for a repaint.
+- ask for a repaint,
+- ask to scroll a range into view with `ensureVisible`. The scroll waits for the end of the frame (see below).
+
+A callback cannot read the layout of a text. A painter receives it ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)).
 
 A plugin must not mark anything as needing layout, and must not call `setState` or notify widgets synchronously. A plugin that has to tell widgets about a change postpones that to after the frame, as `SearchInPagePlugin` does ([Section 7.1](#71-changenotifier-and-setstate-re-entrancy-during-build-layout-and-dispose)).
 
@@ -1442,7 +1515,7 @@ Both rules are checked in debug mode:
 
 While the binding runs the post-layout callbacks, marking a render object as needing layout is an error. Without the check, the mistake showed up later in the frame as an unrelated assertion, or not at all, and the render object stayed dirty.
 
-**Scrolling is safe.** Scrolling can change layout: a `ListView` or `CustomScrollView` lays out again when its offset changes. A plugin does not have to think about that. `TextDelegate.ensureVisible` and `TextDelegate.showOnScreen` check whether a frame is being produced. If so, they scroll at the end of that frame, and the result shows in the next one. Otherwise they scroll right away. The scroll is dropped if the text is gone by then.
+**Scrolling is safe.** Scrolling can change layout: a `ListView` or `CustomScrollView` lays out again when its offset changes. A plugin does not have to think about that. `TextDelegate.ensureVisible` checks whether a frame is being produced. If so, it scrolls at the end of that frame, and the result shows in the next one. Otherwise it scrolls right away. The scroll is dropped if the text is gone or has no layout by then.
 
 A plugin that has to change layout in some other way does it after the frame, for example in a post-frame callback.
 
@@ -1460,7 +1533,11 @@ A plugin that has to change layout in some other way does it after the frame, fo
 ## 8. Stage 2: annotations
 
 > Stage 2 is a future stage. It is **not** part of what this RFC asks to land. It is here to show that interaction can be added on top of stage 1.
-> Branch: [`text-plugin-annotations`](https://github.com/hannah-hyj/flutter/tree/text-plugin-annotations). Live demo: [text-plugin-annotations-demo.web.app](https://text-plugin-annotations-demo.web.app/). Its framework tests and example tests were run for this document on the current stage 1 branch. The statements in this section that no test covers come from the design notes on that branch.
+> Branch: [`text-plugin-annotations`](https://github.com/hannah-hyj/flutter/tree/text-plugin-annotations). Live demo: [text-plugin-annotations-demo.web.app](https://text-plugin-annotations-demo.web.app/). Its framework tests and example tests were run for this document on the stage 1 that the branch is built on, which has the older API. The statements in this section that no test covers come from the design notes on that branch.
+>
+> **The branch still uses the older stage 1 API.** It was built before the layout of the text moved to a parameter of `paint` ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)), and it has not been updated. On the branch a `TextDelegate` still has geometry, a painter is a `CustomPainter`, and `TextPlugin` has `didLayoutText`. The code and the statements in this section describe that branch.
+>
+> A separate experiment applied the new rule (a plugin never holds the layout) to this stage. It is on a local branch that is not published. It found that no plugin read the layout outside `paint`. The four example plugins needed only a mechanical port. Hit testing and semantics were unchanged, because they use the render object's own text painter. The focus ring became an ordinary plugin painter. No new plugin-facing API was needed. One thing gets harder: a plugin cannot place a popup next to a range from an annotation's tap callback by itself.
 
 ### 8.1 What it adds
 
@@ -1496,7 +1573,7 @@ void didUpdateText(TextDelegate delegate) {
 
 ### 8.3 Why it does not change the stage 1 API
 
-`TextAnnotation` and `TextDelegate.annotations` are additions. `TextPlugin` keeps its four callbacks, and a stage 1 plugin runs unchanged.
+`TextAnnotation` and `TextDelegate.annotations` are additions. `TextPlugin` keeps its callbacks, and a stage 1 plugin runs unchanged. On the branch there are four callbacks, because it still has `didLayoutText`.
 
 It does change stage 1 **code**, and the list is given here so that this is not a surprise later:
 
@@ -1508,7 +1585,7 @@ It does change stage 1 **code**, and the list is given here so that this is not 
 
 ### 8.4 Use cases that move here
 
-**Automatic URL linkification (`LinkifyPlugin`).** It detects URLs (`https://...`, `www....`) inside plain `Text` and `EditableText` widgets and underlines them, without requiring callers to split strings into `TextSpan`s with `TapGestureRecognizer`s. In stage 2 each URL is an annotation with a `linkUrl`, a click cursor and an `onTap`. Hover previews use the hover callbacks, with the popup anchored by `delegate.localToGlobal`.
+**Automatic URL linkification (`LinkifyPlugin`).** It detects URLs (`https://...`, `www....`) inside plain `Text` and `EditableText` widgets and underlines them, without requiring callers to split strings into `TextSpan`s with `TapGestureRecognizer`s. In stage 2 each URL is an annotation with a `linkUrl`, a click cursor and an `onTap`. Hover previews use the hover callbacks. On the branch the popup is anchored with `delegate.localToGlobal`, which the current stage 1 does not have (see the note at the top of this section).
 
 **Interactive spoiler and study-cloze masking (`SpoilerMaskPlugin`).** It scans `delegate.text` for spoiler tags (`||...||`, `[spoiler]...[/spoiler]`) or flashcard cloze-deletion markers (`{{...}}`) and draws an opaque rounded cover over the hidden glyphs in `foregroundPainter`. In stage 2 the cover is still painted, and an annotation makes it tappable and gives it a spoken label.
 
@@ -1527,7 +1604,11 @@ Because `TextPlugin` is non-destructive and does not mutate the input `InlineSpa
 ## 9. Stage 3: widgets
 
 > Stage 3 is a future stage. It is **not** part of what this RFC asks to land.
-> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document on the current stage 1 branch. The findings about the two example plugins come from the experiment's own report.
+> Branch: [`text-plugin-with-widget`](https://github.com/hannah-hyj/flutter/tree/text-plugin-with-widget). Live demo: [text-plugin-widget-demo.web.app](https://text-plugin-widget-demo.web.app/). Its framework tests were run for this document on the stage 1 that the branch is built on, which has the older API. The findings about the two example plugins come from the experiment's own report.
+>
+> **The branch still uses the older stage 1 API.** It was built before the layout of the text moved to a parameter of `paint` ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)), and it has not been updated. On the branch a `TextDelegate` still has geometry, a painter is a `CustomPainter`, and `TextPlugin` has `didLayoutText`. The code and the statements in this section describe that branch.
+>
+> A separate experiment applied the new rule (a plugin never holds the layout) to this stage. It is on a local branch that is not published. It found three things. `buildTextWidgets` needed the `TextLayout` as a parameter, valid only during the call, because one example places one widget on each line of a range. The framework needed a non-public way to read the layout from the widgets layer. One new positioning option was added, so that the framework, not the plugin, decides on which side of a range a popup goes.
 
 ### 9.1 What it adds
 
@@ -1559,7 +1640,7 @@ Because the children are ordinary widgets, gestures, focus, semantics, mouse reg
 
 ### 9.2 Why it does not change the stage 1 API
 
-`TextWidgetPlugin` is a mixin that a plugin opts into. A plugin without it is a stage 1 plugin and is treated as one. The stage 1 test file is unchanged on the branch and passes.
+`TextWidgetPlugin` is a mixin that a plugin opts into. A plugin without it is a stage 1 plugin and is treated as one. The stage 1 test file of that branch is unchanged and passes.
 
 What it touches in stage 1 code:
 
@@ -1617,6 +1698,8 @@ void didUpdateText(TextDelegate delegate) {
 }
 ```
 
+`_MentionPainter` is a `TextPluginPainter`. It computes the boxes of the ranges from the `TextLayout` that it receives in `paint`.
+
 **Stage 2, annotations.** Same moment, and the plugin stores data next to the painter:
 
 ```dart
@@ -1640,6 +1723,8 @@ Iterable<Widget> buildTextWidgets(BuildContext context, TextDelegate delegate, T
   ];
 }
 ```
+
+The stage 2 and stage 3 samples are written against the experiment branches, which still use the older stage 1 API (see the notes at the top of [Section 8](#8-stage-2-annotations) and [Section 9](#9-stage-3-widgets)).
 
 | | Stage 1 | Stage 2 | Stage 3 |
 | :--- | :--- | :--- | :--- |
@@ -1679,18 +1764,24 @@ For the later stages, see [Section 8.5](#85-what-is-still-open), [Section 9.4](#
 
 | Claim | Branch | How |
 | :--- | :--- | :--- |
-| The stage 1 framework tests pass (26 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
+| The stage 1 framework tests pass (31 tests in `text_plugin_test.dart`) | `text-plugin-mvp` | Ran |
 | An obscured `EditableText` is not registered with any plugin | `text-plugin-mvp` | Ran |
-| The order of the lifecycle callbacks ([Section 3.2](#32-textplugin-lifecycle-contract)) | `text-plugin-mvp` | Read, in all three hosts. The lifecycle tests ran |
+| The order of the lifecycle callbacks ([Section 3.2](#32-textplugin-lifecycle-contract)) | `text-plugin-mvp` | Read, in `TextDelegateHostMixin`, which every host uses. The lifecycle tests ran |
+| A painter receives the layout as a `TextLayout`, and the `TextLayout` is not valid after `paint` returns ([Section 3.3](#33-textdelegate-proxy-for-text-render-objects)) | `text-plugin-mvp` | Ran ('TextLayout gives a painter the boxes and positions of the text', 'A TextLayout is only valid during the paint call that received it') |
+| A text that is only laid out again gets no callback and no notification, and is painted with the new layout ([Section 3.2](#32-textplugin-lifecycle-contract)) | `text-plugin-mvp` | Ran ('A text that is only laid out again repaints with the new layout, without a plugin callback') |
+| The callbacks run after layout, and a painter they set paints in that frame ([Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout)) | `text-plugin-mvp` | Ran ('Lifecycle callbacks run after layout, and a painter they set paints in that frame') |
+| Document order is valid in `didAddText` ([Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout)) | `text-plugin-mvp` | Ran ('Document order is valid in didAddText for a text inserted between its siblings') |
+| A render object is attached before it is linked into the child list of its parent ([Section 7.2](#72-why-didaddtext-and-didupdatetext-run-after-layout)) | `text-plugin-mvp` | Read, in `ContainerRenderObjectMixin.insert` and `RenderObject.adoptChild` |
 | Painting order and clipping ([Section 3.5](#35-renderparagraph-and-rendereditable-painting-and-z-order-pipeline)) | `text-plugin-mvp` | Read. The paint-order tests ran |
 | `SearchInPagePlugin` defaults, and that it builds no widgets | `text-plugin-mvp` | Read |
 | The example app has five paint-only plugins | `text-plugin-mvp` | Read. Its tests ran (4 tests) |
-| The cost model ([Section 3.8](#38-performance)) | `text-plugin-mvp` | Read. Measured on macOS in profile mode, several runs ([Section 3.8.1](#381-first-measurements)) |
+| The cost model ([Section 3.8](#38-performance)) | `text-plugin-mvp` | Read. Measured on macOS in profile mode, several runs ([Section 3.8.1](#381-first-measurements)), before the layout moved to a parameter of `paint`. Not measured again |
 | Text in a covered route is not given to plugins ([Section 7.14](#714-text-that-is-mounted-but-not-visible)) | `text-plugin-mvp` | Ran, and checked by hand in the example app |
 | Kept-alive tabs, `IndexedStack` and `Offstage` are still given to plugins ([Section 7.14](#714-text-that-is-mounted-but-not-visible)) | `text-plugin-mvp` | Read. Not tested |
 | A match inside a scrolled text field is not scrolled into view ([Section 7.15](#715-a-match-inside-a-scrolled-text-field)) | `text-plugin-mvp` | Ran, and checked by hand in the example app |
-| Stage 2 behavior ([Section 8](#8-stage-2-annotations)) | `text-plugin-annotations` | Ran on the current stage 1: 39 framework tests (the stage 1 tests and `text_annotation_test.dart`) and the 4 example tests. Statements that no test covers are from the design notes |
-| What stages 2 and 3 touch in stage 1 code | Both | Read from the diff against stage 1 |
-| The stage 3 framework tests pass, together with the unchanged stage 1 tests (60 tests) | `text-plugin-with-widget` | Ran on the current stage 1 |
+| Stage 2 behavior ([Section 8](#8-stage-2-annotations)) | `text-plugin-annotations` | Ran on the stage 1 that the branch is built on, which has the older API: 39 framework tests (the stage 1 tests and `text_annotation_test.dart`) and the 4 example tests. Statements that no test covers are from the design notes |
+| What stages 2 and 3 touch in stage 1 code | Both | Read from the diff against the stage 1 that the branches are built on |
+| The stage 3 framework tests pass, together with the unchanged stage 1 tests (60 tests) | `text-plugin-with-widget` | Ran on the stage 1 that the branch is built on, which has the older API |
+| What the new rule means for stages 2 and 3 (the notes at the top of [Section 8](#8-stage-2-annotations) and [Section 9](#9-stage-3-widgets)) | Local experiment branches, not published | From the reports of those experiments. Not run for this document |
 | Stage 3 findings and defects ([Section 9](#9-stage-3-widgets)) | `text-plugin-with-widget` | From the experiment's report |
 | Selection experiment ([Section 5.2.5](#525-what-has-been-done-and-what-an-experiment-showed)) | `text-plugin-selection` | From the experiment's report. Not run again, and not rebased |
