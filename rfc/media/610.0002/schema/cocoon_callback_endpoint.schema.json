@@ -1,0 +1,376 @@
+{
+  "openapi": "3.2.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Cocoon Status Callback Endpoint",
+    "version": "v1",
+    "description": "OpenAPI specification for the Cocoon-hosted status callback endpoint (POST https://dashboard.flutter.dev/api/v1/partner/callback). Used by the partner to report CI execution status back to Cocoon for a given uid—both for optional start notifications (status: in_progress) and for required terminal status updates (succeeded, failed, infra_failure, cancelled, neutral, or skipped)."
+  },
+  "servers": [
+    {
+      "url": "https://dashboard.flutter.dev",
+      "description": "Flutter Cocoon production server."
+    }
+  ],
+  "paths": {
+    "/api/v1/partner/callback": {
+      "post": {
+        "operationId": "postCocoonPartnerCallback",
+        "summary": "Report Partner CI Execution Status to Cocoon",
+        "description": "Receives a raw Ed25519-signed JWT from a Partner CI reporting either an optional start notification (status: in_progress) or a required terminal status update for a given uid. Maximum request body size is 768 KB. All details[].url links MUST use https://. Because the Flutter build dashboard is public, message summaries and details[].url links submitted to Cocoon MUST NOT contain PII, internal hostnames, or confidential partner secrets. The partner CI SHOULD retry with exponential backoff on timeouts, 408, 429, or 5xx responses.",
+        "requestBody": {
+          "required": true,
+          "description": "Raw Ed25519-signed JWT in JWS Compact Serialization (<Base64Url JWT Header>.<Base64Url JWT Payload>.<Base64Url Signature>) signed with the partner's private key. The decoded JWT header conforms to #/components/schemas/JwtHeader and the decoded JWT payload conforms to #/components/schemas/CocoonCallbackJwtPayload.",
+          "content": {
+            "application/jwt": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedJwt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status update accepted by Cocoon. Done; do not retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request — payload schema validation error or non-HTTPS log URL. Do not retry; fix payload construction.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — unknown kid, expired token, or invalid JWT signature. Do not retry; verify signing key and JWKS endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found — data.uid does not exist in Cocoon. Do not retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request Timeout — temporary server or network timeout. Partner CI should retry with exponential backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — terminal status or a duplicate in_progress status was already processed for data.uid. Treat as idempotent success; do not retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large — request body exceeds the 768 KB limit. Do not retry; truncate message or details[].",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests — temporary rate limit exceeded. Partner CI should retry with exponential backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server Error — temporary server failure. Partner CI should retry with exponential backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SignedJwt": {
+        "title": "Signed JWT (JWS Compact Serialization)",
+        "description": "Compact JWS string (<Base64Url Header>.<Base64Url Payload>.<Base64Url Signature>) signed with the partner's Ed25519 private key (alg: EdDSA). See JwtHeader and CocoonCallbackJwtPayload for the decoded JSON structures.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+      },
+      "JwtHeader": {
+        "title": "Decoded JWT Header",
+        "description": "JWS header parameters for Ed25519-signed tokens.",
+        "type": "object",
+        "required": [
+          "alg",
+          "typ",
+          "kid"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "alg": {
+            "type": "string",
+            "const": "EdDSA",
+            "description": "Cryptographic signing algorithm. Must be 'EdDSA' (Ed25519 per RFC 8037)."
+          },
+          "typ": {
+            "type": "string",
+            "const": "JWT",
+            "description": "Token media type. Must be 'JWT'."
+          },
+          "kid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Key ID identifying the partner's Ed25519 public key in the partner's JWKS endpoint (partner_keys_url)."
+          }
+        },
+        "examples": [
+          {
+            "alg": "EdDSA",
+            "typ": "JWT",
+            "kid": "partner-key-2026-10"
+          }
+        ]
+      },
+      "CocoonCallbackJwtPayload": {
+        "title": "Decoded Cocoon Status Callback JWT Payload (v1)",
+        "description": "Decoded JWT claims sent by Partner CI to POST https://dashboard.flutter.dev/api/v1/partner/callback.",
+        "type": "object",
+        "required": [
+          "iss",
+          "aud",
+          "iat",
+          "exp",
+          "data"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "iss": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Issuer claim identifying the partner (must match the configured 'partner' identifier in Cocoon)."
+          },
+          "aud": {
+            "type": "string",
+            "const": "https://dashboard.flutter.dev/api/v1/partner/callback",
+            "description": "Audience claim matching the exact Cocoon v1 callback endpoint URL."
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Issued At timestamp (Unix epoch seconds)."
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Expiration timestamp (Unix epoch seconds)."
+          },
+          "data": {
+            "$ref": "#/components/schemas/CocoonCallbackData"
+          }
+        },
+        "examples": [
+          {
+            "iss": "3p-partner-ci",
+            "aud": "https://dashboard.flutter.dev/api/v1/partner/callback",
+            "iat": 1774963500,
+            "exp": 1774963800,
+            "data": {
+              "uid": "0sAtLhwbmGz2Y0WBDzPL",
+              "status": "failed",
+              "message": "1 of 2 test suites failed",
+              "details": [
+                {
+                  "name": "device_1_test_suite_1",
+                  "status": "failed",
+                  "url": "https://partner-ci.example.com/device_1_test_suite_1/log"
+                },
+                {
+                  "name": "device_1_test_suite_2",
+                  "status": "succeeded",
+                  "url": "https://partner-ci.example.com/device_1_test_suite_2/log"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "CocoonCallbackData": {
+        "title": "Cocoon Status Callback Data",
+        "description": "CI execution status and optional test suite details for a given uid. When status is a terminal status, details[].status must also be a terminal status (not in_progress).",
+        "type": "object",
+        "required": [
+          "uid",
+          "status"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "uid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique correlation identifier matching the CI execution request dispatched by Cocoon."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional Markdown-formatted summary of the CI run (expected when status is 'failed' or 'infra_failure'). Must not contain PII, internal hostnames, or confidential partner secrets."
+          },
+          "details": {
+            "type": "array",
+            "description": "Granular test suite execution details.",
+            "items": {
+              "$ref": "#/components/schemas/StatusDetail"
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "$ref": "#/components/schemas/TerminalExecutionStatus"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "details": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/TerminalExecutionStatus"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "StatusDetail": {
+        "title": "Test Suite Execution Detail",
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "url"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the test suite or device target."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "description": "Publicly accessible HTTPS URL for test execution logs or details. Must not contain PII, internal hostnames, or confidential partner secrets."
+          }
+        }
+      },
+      "ExecutionStatus": {
+        "title": "Execution Status",
+        "type": "string",
+        "enum": [
+          "in_progress",
+          "succeeded",
+          "neutral",
+          "skipped",
+          "failed",
+          "infra_failure",
+          "cancelled"
+        ],
+        "description": "in_progress is allowed only in optional start callbacks; terminal callbacks must use one of succeeded, neutral, skipped, failed, infra_failure, or cancelled."
+      },
+      "TerminalExecutionStatus": {
+        "title": "Terminal Execution Status",
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "neutral",
+          "skipped",
+          "failed",
+          "infra_failure",
+          "cancelled"
+        ],
+        "description": "Terminal execution status values. When data.status is terminal, all data.details[].status entries must also be terminal."
+      },
+      "AckResponse": {
+        "title": "Acknowledgment Response",
+        "description": "Empty JSON object returned on HTTP 200 OK.",
+        "type": "object",
+        "maxProperties": 0,
+        "additionalProperties": false,
+        "examples": [
+          {}
+        ]
+      },
+      "ErrorResponse": {
+        "title": "Error Response",
+        "description": "Standard JSON error response body returned on HTTP 4xx and 5xx responses.",
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable error description."
+          }
+        },
+        "examples": [
+          {
+            "message": "Human-readable error description"
+          }
+        ]
+      }
+    }
+  }
+}

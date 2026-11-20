@@ -1,0 +1,164 @@
+{
+  "openapi": "3.2.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Partner Public JWKS Endpoint",
+    "version": "v1",
+    "description": "OpenAPI specification for the partner-hosted JSON Web Key Set (JWKS) endpoint (<partner_keys_url>). Used by Cocoon to fetch the partner's active Ed25519 public keys (kid) in order to verify JWT signatures on inbound status callback requests (POST /api/v1/partner/callback) from the partner."
+  },
+  "servers": [
+    {
+      "url": "https://{partner_host}",
+      "description": "Partner CI HTTPS server (must use https:// and resolve to a public IP address).",
+      "variables": {
+        "partner_host": {
+          "default": "partner-ci.example.com",
+          "description": "Public hostname of the Partner CI server."
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/jwks": {
+      "get": {
+        "operationId": "getPartnerJwks",
+        "summary": "Fetch Partner Ed25519 Public Keys (JWKS)",
+        "description": "Returns the partner's active Ed25519 public keys in RFC 7517 JSON Web Key Set (JWKS) format. Must respond within 3 seconds with a maximum response body size of 64 KB.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Standard JSON Web Key Set (RFC 7517) containing the partner's active Ed25519 public key(s) and kid(s).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JwksResponse"
+                },
+                "example": {
+                  "keys": [
+                    {
+                      "kty": "OKP",
+                      "crv": "Ed25519",
+                      "use": "sig",
+                      "alg": "EdDSA",
+                      "kid": "partner-key-2026-10",
+                      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "JwksResponse": {
+        "title": "JWKS Response",
+        "description": "RFC 7517 JSON Web Key Set containing active Ed25519 public keys.",
+        "type": "object",
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "description": "List of active Ed25519 JSON Web Keys.",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Ed25519Jwk"
+            }
+          }
+        }
+      },
+      "Ed25519Jwk": {
+        "title": "Ed25519 JSON Web Key",
+        "description": "RFC 8037 Octet Key Pair (OKP) representation of an Ed25519 public key.",
+        "type": "object",
+        "required": [
+          "kty",
+          "crv",
+          "alg",
+          "kid",
+          "x"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "kty": {
+            "type": "string",
+            "const": "OKP",
+            "description": "Key Type. Must be 'OKP' (Octet Key Pair per RFC 8037)."
+          },
+          "crv": {
+            "type": "string",
+            "const": "Ed25519",
+            "description": "Cryptographic curve used with the key. Must be 'Ed25519'."
+          },
+          "use": {
+            "type": "string",
+            "const": "sig",
+            "description": "Intended use of the public key ('sig' for signature verification)."
+          },
+          "alg": {
+            "type": "string",
+            "const": "EdDSA",
+            "description": "Algorithm intended for use with the key. Must be 'EdDSA'."
+          },
+          "kid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique Key ID matching the 'kid' header parameter of signed JWTs."
+          },
+          "x": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "Base64url-encoded Ed25519 public key bytes (RFC 8037 Section 2)."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "title": "Error Response",
+        "description": "Standard JSON error response body returned on HTTP 4xx and 5xx responses.",
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable error description."
+          }
+        },
+        "examples": [
+          {
+            "message": "Human-readable error description"
+          }
+        ]
+      }
+    }
+  }
+}
